@@ -448,31 +448,16 @@ import GPyOpt
 from sklearn.model_selection import cross_val_score
 from sklearn.ensemble import IsolationForest
 
-
-
 # Bounds (NOTE: define continuous variables first, then discrete!)
-# bound_n_estimators = [2, 200]
-bound_max_samples = [2, int(X_test.shape[0] / 2)]
+bound_n_estimators = [50, 400, 10] # 數值從50開始，每次遞增10
+bound_max_samples = [2, X_test.shape[0]]
 bound_max_features = [3, 5]
 
 
-bounds = [   
-    # {'name': 'n_estimators',
-    #  'type': 'discrete',
-    #  'domain': range(bound_n_estimators[0], bound_n_estimators[1])},
-    
-    {'name': 'max_samples',
-     'type': 'discrete',
-     'domain': range(bound_max_samples[0], bound_max_samples[1])}, # 200 約等於 X_test的一半
-
-    {'name': 'max_features',
-     'type': 'discrete',
-     'domain': range(bound_max_features[0], bound_max_features[1])}
-]
 
 
-def BO_EX(experiment_count, f, initial_design_numdata): 
-    opt_params = pd.DataFrame(columns=['max_samples', 'max_features', 'time_cost'])
+def BO_EX(experiment_count, f, initial_design_numdata, bound): 
+    opt_params = pd.DataFrame(columns=['n_estimators', 'max_samples', 'max_features', 'time_cost'])
     max_iter = 100
     max_time = 120
     
@@ -481,7 +466,7 @@ def BO_EX(experiment_count, f, initial_design_numdata):
         time_start = time.time() #開始計時
         
         optimizer = GPyOpt.methods.BayesianOptimization(
-            f=f, domain=bounds,
+            f=f, domain=bound,
             acquisition_type ='MPI',
             acquisition_par = 0.1,
             exact_eval=True, 
@@ -502,8 +487,10 @@ def BO_EX(experiment_count, f, initial_design_numdata):
     
         # 所有實驗的參數結果
         opt_params = opt_params.append({
-            'max_samples': gp_opt[0], 
-            'max_features': gp_opt[1],
+            'IF_count': gp_opt[0],
+            'n_estimators': gp_opt[1], 
+            'max_samples': gp_opt[2], 
+            'max_features': gp_opt[3],
             'time_cost': time_c}, ignore_index=True)
     print(opt_params.describe())
     return opt_params
@@ -511,25 +498,25 @@ def BO_EX(experiment_count, f, initial_design_numdata):
 
 #%%
 #
-# IF COUNT 實驗
+# unknown function
 #
 
-# Score. Optimizer will try to find minimum, so we will add a "-" sign.
-def IF_1(parameters):
+# Optimizer will try to find minimum, so we will add a "-" sign.
+def unknown_func(parameters):
     parameters = parameters[0]
-    IF_count = 1
+    IF_count = int(parameters[0])
+    print(IF_count)
     diff_list = []
     for i in range(IF_count):
         clf = IsolationForest(contamination=abnormal_ratio, 
                             random_state=None,
-                            n_estimators=200,
-                            max_samples=int(parameters[0]), 
-                            max_features=int(parameters[1]))   
+                            n_estimators=int(parameters[1]),
+                            max_samples=int(parameters[2]), 
+                            max_features=int(parameters[3]))   
         clf.fit(X_train)
         
         # anomaly score
-        score = clf.score_samples(X_test)
-        
+        score = clf.score_samples(X_test)        
         d = {'Anomaly_score' : pd.Series(score * -1, index=X_test.index),
              'y_test' : y_test_bi}
         df = pd.DataFrame(d)
@@ -538,97 +525,106 @@ def IF_1(parameters):
         min_anomaly_score = df[df['y_test']==-1].min(axis=0)
         diff_list.append(min_anomaly_score['Anomaly_score'] - max_normal_score['Anomaly_score'])
     diff_min = min(diff_list)
+    # diff_max = max(diff_list)
     print(diff_min)
     
     return -diff_min
 
-def IF_3(parameters):
-    parameters = parameters[0]
-    IF_count = 3
-    diff_list = []
-    for i in range(IF_count):
-        clf = IsolationForest(contamination=abnormal_ratio, 
-                            n_estimators=200,
-                            random_state=None,
-                            max_samples=int(parameters[0]), 
-                            max_features=int(parameters[1]))   
-        clf.fit(X_train)
-        
-        # anomaly score
-        score = clf.score_samples(X_test)
-        
-        d = {'Anomaly_score' : pd.Series(score * -1, index=X_test.index),
-             'y_test' : y_test_bi}
-        df = pd.DataFrame(d)
-        
-        max_normal_score = df[df['y_test']==1].max(axis=0)
-        min_anomaly_score = df[df['y_test']==-1].min(axis=0)
-        diff_list.append(min_anomaly_score['Anomaly_score'] - max_normal_score['Anomaly_score'])
-    diff_min = min(diff_list)
-    print(diff_min)
-    
-    return -diff_min
+#%%
+#
+# n_estimators 實驗
+#
 
-def IF_10(parameters):
-    parameters = parameters[0]
-    IF_count = 10
-    diff_list = []
-    for i in range(IF_count):
-        clf = IsolationForest(contamination=abnormal_ratio, 
-                            n_estimators=200,
-                            random_state=None,
-                            max_samples=int(parameters[0]), 
-                            max_features=int(parameters[1]))   
-        clf.fit(X_train)
-        
-        # anomaly score
-        score = clf.score_samples(X_test)
-        
-        d = {'Anomaly_score' : pd.Series(score * -1, index=X_test.index),
-             'y_test' : y_test_bi}
-        df = pd.DataFrame(d)
-        
-        max_normal_score = df[df['y_test']==1].max(axis=0)
-        min_anomaly_score = df[df['y_test']==-1].min(axis=0)
-        diff_list.append(min_anomaly_score['Anomaly_score'] - max_normal_score['Anomaly_score'])
-    diff_min = min(diff_list)
-    print(diff_min)
+bound_1 = [   
+    {'name': 'IF_count',
+      'type': 'discrete',
+      'domain': range(1, 2)}, # 設定range(想要的IF_count, IF_count+1)
     
-    return -diff_min
+    {'name': 'n_estimators',
+      'type': 'discrete',
+      'domain': range(1000, 1001)},
+    
+    {'name': 'max_samples',
+     'type': 'discrete',
+     'domain': range(2, X_test.shape[0])}, # 200 約等於 X_test的一半
 
-def IF_20(parameters):
-    parameters = parameters[0]
-    IF_count = 20
-    diff_list = []
-    for i in range(IF_count):
-        clf = IsolationForest(contamination=abnormal_ratio, 
-                            n_estimators=200,
-                            random_state=None,
-                            max_samples=int(parameters[0]), 
-                            max_features=int(parameters[1]))   
-        clf.fit(X_train)
-        
-        # anomaly score
-        score = clf.score_samples(X_test)
-        
-        d = {'Anomaly_score' : pd.Series(score * -1, index=X_test.index),
-             'y_test' : y_test_bi}
-        df = pd.DataFrame(d)
-        
-        max_normal_score = df[df['y_test']==1].max(axis=0)
-        min_anomaly_score = df[df['y_test']==-1].min(axis=0)
-        diff_list.append(min_anomaly_score['Anomaly_score'] - max_normal_score['Anomaly_score'])
-    diff_min = min(diff_list)
-    print(diff_min)
-    
-    return -diff_min
+    {'name': 'max_features',
+     'type': 'discrete',
+     'domain': range(3, 6)}
+]
 
 opt_params_list = []
-initial_design_numdata = 5
-experiment_count = 0
+experiment_count = 1
 if experiment_count > 0:
     bo_ex_labels = ['1 Isolation Forest', '3 Isolation Forest', '10 Isolation Forest', '20 Isolation Forest']
-    opt_params_list.append(BO_EX(experiment_count,  IF_1, initial_design_numdata))
+    opt_params_list.append(BO_EX(experiment_count,  unknown_func, 10, bound_1))
+
+opt_max_samples = int(opt_params_list[0].max_samples)
+opt_max_features = int(opt_params_list[0].max_features)
+
+# bound_2 = [   
+#     {'name': 'IF_count',
+#       'type': 'discrete',
+#       'domain': range(20, 21)}, # 設定range(想要的IF_count, IF_count+1)
+    
+#     {'name': 'n_estimators',
+#       'type': 'discrete',
+#       'domain': range(1, 500, 10)},
+    
+#     {'name': 'max_samples',
+#      'type': 'discrete',
+#      'domain': range(opt_max_samples, opt_max_samples+1)}, # 200 約等於 X_test的一半
+
+#     {'name': 'max_features',
+#      'type': 'discrete',
+#      'domain': range(opt_max_features, opt_max_features+1)}
+# ]
+
+# opt_params_list = []
+# experiment_count = 50
+# if experiment_count > 0:
+#     opt_params_list.append(BO_EX(experiment_count,  unknown_func, 10, bound_2))
+
+# bound 2
+IF_count = 3
+bound_n_estimators = range(10, 1000, 10)
+
+result = pd.DataFrame(columns=['n_estimators', 'max_samples', 'max_features', 'score_difference'])
+
+grid_search = True
+if grid_search:
+    for n_estimators in bound_n_estimators:
+        time_start = time.time() #開始計時
+        score_diff_list = []
+        for i in range(IF_count):
+            params = [1, n_estimators, opt_max_samples, opt_max_features]
+            score_diff_list.append(unknown_func(params))
+            score_min = min(score_diff_list)
+            score_max = max(score_diff_list)
+            diff = score_max-score_min
+            
+            if (diff/score_min) < 0.1:
+                time_end = time.time()    #結束計時
+                time_c= time_end - time_start   #執行所花時間
+                result = result.append({
+                    'n_estimators': n_estimators,
+                    'max_samples': opt_max_samples, 
+                    'max_features': opt_max_features,
+                    'score_min': score_min,
+                    'score_max': score_max,
+                    'time_cost':time_c}, ignore_index=True)    
+    print(result.describe())
+
+#%%
+#
+# IF COUNT 實驗
+#
+# opt_params_list = []
+# initial_design_numdata = 5
+# experiment_count = 0
+# if experiment_count > 0:
+#     bo_ex_labels = ['1 Isolation Forest', '3 Isolation Forest', '10 Isolation Forest', '20 Isolation Forest']
+#     opt_params_list.append(BO_EX(experiment_count,  unknown_func, initial_design_numdata))
     # opt_params_list.append(BO_EX(experiment_count,  IF_3, initial_design_numdata))
     # opt_params_list.append(BO_EX(experiment_count, IF_10, initial_design_numdata))
     # opt_params_list.append(BO_EX(experiment_count, IF_20, initial_design_numdata))
@@ -637,15 +633,13 @@ if experiment_count > 0:
 #
 # initial_design_numdata 實驗
 #
-opt_params_list = []
-experiment_count = 50
-if experiment_count > 0:
-    bo_ex_labels = ['5 initial samples', '10 initial samples', '15 initial samples']
-    opt_params_list.append(BO_EX(experiment_count,  IF_3, 5))
-    opt_params_list.append(BO_EX(experiment_count,  IF_3, 10))
-    opt_params_list.append(BO_EX(experiment_count,  IF_3, 15))
-
-
+# opt_params_list = []
+# experiment_count = 0
+# if experiment_count > 0:
+#     bo_ex_labels = ['5 initial samples', '10 initial samples', '15 initial samples']
+#     opt_params_list.append(BO_EX(experiment_count,  IF_3, 5))
+#     opt_params_list.append(BO_EX(experiment_count,  IF_3, 10))
+#     opt_params_list.append(BO_EX(experiment_count,  IF_3, 15))
 
 #%%
 print('GPyOpt Result...')
@@ -667,9 +661,6 @@ for j in range(len(opt_params_col)):
     
 for i in range(len(opt_params_list)):
     print(opt_params_list[i].describe())
-
-    
-
 
 
 #%%
@@ -693,53 +684,29 @@ BO_IF.PlotScoreHist(10, 2)
 
 
 #%%
+print('Grid Search')
+
 bound_n_estimators = range(2, 200)
 bound_max_samples = range(2, int(X_test.shape[0] / 2))
 bound_max_features = range(3, 6)
 result = pd.DataFrame(columns=['n_estimators', 'max_samples', 'max_features', 'score_difference'])
 
-def IF_1(parameters):
-    IF_count = 1
-    diff_list = []
-    for i in range(IF_count):
-        clf = IsolationForest(contamination=abnormal_ratio, 
-                            n_estimators=int(parameters[0]), 
-                            random_state=None,
-                            max_samples=int(parameters[1]), 
-                            max_features=int(parameters[2]))   
-        clf.fit(X_train)
-        
-        # anomaly score
-        score = clf.score_samples(X_test)
-        
-        d = {'Anomaly_score' : pd.Series(score * -1, index=X_test.index),
-             'y_test' : y_test_bi}
-        df = pd.DataFrame(d)
-        
-        max_normal_score = df[df['y_test']==1].max(axis=0)
-        min_anomaly_score = df[df['y_test']==-1].min(axis=0)
-        diff_list.append(min_anomaly_score['Anomaly_score'] - max_normal_score['Anomaly_score'])
-    diff_min = min(diff_list)
-    print(diff_min)
-    
-    return -diff_min
 
-grid_search = False
+grid_search = True
 if grid_search:
     time_start = time.time() #開始計時
     for n_estimators in bound_n_estimators:
         for max_samples in bound_max_samples:
             for max_features in bound_max_features:
                 params = [n_estimators, max_samples, max_features]
-                score_difference = IF_1(params)
+                score_difference = unknown_func(params)
                 result = result.append({
                     'n_estimators': n_estimators,
                     'max_samples': max_samples, 
                     'max_features': max_features,
                     'score_difference': score_difference}, ignore_index=True)
+    # result
     time_end = time.time()    #結束計時
-#%%
-if grid_search:
     time_c= time_end - time_start   #執行所花時間
     print('\t', 'time cost', time_c, 's')
     
