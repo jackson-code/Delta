@@ -337,64 +337,6 @@ print('\t binary classification')
 IF.ConfusionMatrixBinary([-1, 1], 'IF')
 IF.ClassificationReportBinary()
 
-
-
-#%%
-'''
-Grid Search
-'''
-expriment_count = 0
-for i in range(expriment_count):
-    print('Grid Search...')
-    from sklearn.ensemble import IsolationForest
-    from sklearn.model_selection import GridSearchCV
-
-    start_time = time.strftime("Grid Search start: %Y-%m-%d %I:%M:%S %p", time.localtime())
-    print("ex", i)
-    print(start_time)
-    
-    model = IsolationForest(random_state=None)
-    
-    max_samples = []
-    for i in range(2, 143, 1):
-        max_samples.append(i)
-    
-    param_grid = {'n_estimators': range(1, 200), 
-                  'max_samples': max_samples, 
-                  'contamination': [abnormal_ratio], 
-                  'max_features': [3, 4, 5], 
-                  'bootstrap': [False], 
-                  'n_jobs': [-1]}
-    
-    grid_search = GridSearchCV(model, 
-                            param_grid,
-                            scoring="f1",
-                            refit=True,
-                            cv=10, 
-                            return_train_score=True) 
-    
-    best_model = grid_search.fit(X_train, y_train)
-    print('Optimum parameters', best_model.best_params_)
-    
-    end_time = time.strftime("Grid Search end: %Y-%m-%d %I:%M:%S %p", time.localtime())
-    print(end_time)
-    
-
-
-'''
-Grid Search Isolation Forest
-'''
-print('Grid Search Isolation Forest...')
-GS_IF = myIsolationForest.IF(abnormal_ratio, n_estimators=200, max_samples=18, max_features=3, X_train=X_train)
-GS_IF.Predict(X_test, y_test_bi, y_test, labels)
-
-print('\t binary classification')
-# label: 正常=1，異常=-1
-GS_IF.ConfusionMatrixBinary([-1, 1], 'GS IF')
-GS_IF.ClassificationReportBinary()
-
-
-
 #%%
 print('GMM...')
 
@@ -448,25 +390,18 @@ import GPyOpt
 from sklearn.model_selection import cross_val_score
 from sklearn.ensemble import IsolationForest
 
-# Bounds (NOTE: define continuous variables first, then discrete!)
-bound_n_estimators = [50, 400, 10] # 數值從50開始，每次遞增10
-bound_max_samples = [2, X_test.shape[0]]
-bound_max_features = [3, 5]
-
-
-
-
-def BO_EX(experiment_count, f, initial_design_numdata, bound): 
+def BO_EX(experiment_count, unknown_func, initial_design_numdata, bound): 
     opt_params = pd.DataFrame(columns=['n_estimators', 'max_samples', 'max_features', 'time_cost'])
-    max_iter = 100
-    max_time = 120
+    max_iter = 30
+    max_time = 30
     
     for i in range(experiment_count):
         print('\n\t BO ex', i)
         time_start = time.time() #開始計時
         
         optimizer = GPyOpt.methods.BayesianOptimization(
-            f=f, domain=bound,
+            f=unknown_func,
+            domain=bound,
             acquisition_type ='MPI',
             acquisition_par = 0.1,
             exact_eval=True, 
@@ -505,7 +440,6 @@ def BO_EX(experiment_count, f, initial_design_numdata, bound):
 def unknown_func(parameters):
     parameters = parameters[0]
     IF_count = int(parameters[0])
-    print(IF_count)
     diff_list = []
     for i in range(IF_count):
         clf = IsolationForest(contamination=abnormal_ratio, 
@@ -535,6 +469,9 @@ def unknown_func(parameters):
 # n_estimators 實驗
 #
 
+
+# ----- Step 1: 固定n_estimators，找max_samples、max_feature -----
+# Bounds (NOTE: define continuous variables first, then discrete!)
 bound_1 = [   
     {'name': 'IF_count',
       'type': 'discrete',
@@ -546,7 +483,7 @@ bound_1 = [
     
     {'name': 'max_samples',
      'type': 'discrete',
-     'domain': range(2, X_test.shape[0])}, # 200 約等於 X_test的一半
+     'domain': range(2, X_test.shape[0])},
 
     {'name': 'max_features',
      'type': 'discrete',
@@ -556,64 +493,62 @@ bound_1 = [
 opt_params_list = []
 experiment_count = 1
 if experiment_count > 0:
-    bo_ex_labels = ['1 Isolation Forest', '3 Isolation Forest', '10 Isolation Forest', '20 Isolation Forest']
     opt_params_list.append(BO_EX(experiment_count,  unknown_func, 10, bound_1))
 
+# 第一階段找到的最佳samples, features
+# 代入第二階段
 opt_max_samples = int(opt_params_list[0].max_samples)
 opt_max_features = int(opt_params_list[0].max_features)
 
-# bound_2 = [   
-#     {'name': 'IF_count',
-#       'type': 'discrete',
-#       'domain': range(20, 21)}, # 設定range(想要的IF_count, IF_count+1)
-    
-#     {'name': 'n_estimators',
-#       'type': 'discrete',
-#       'domain': range(1, 500, 10)},
-    
-#     {'name': 'max_samples',
-#      'type': 'discrete',
-#      'domain': range(opt_max_samples, opt_max_samples+1)}, # 200 約等於 X_test的一半
 
-#     {'name': 'max_features',
-#      'type': 'discrete',
-#      'domain': range(opt_max_features, opt_max_features+1)}
-# ]
-
-# opt_params_list = []
-# experiment_count = 50
-# if experiment_count > 0:
-#     opt_params_list.append(BO_EX(experiment_count,  unknown_func, 10, bound_2))
-
+# ----- Step 2: 固定max_samples、max_feature，找n_estimators -----
 # bound 2
-IF_count = 3
-bound_n_estimators = range(10, 1000, 10)
+IF_count = 30
+bound_n_estimators = range(20, 700, 20)
 
-result = pd.DataFrame(columns=['n_estimators', 'max_samples', 'max_features', 'score_difference'])
+result = pd.DataFrame(columns=['n_estimators', 'max_samples', 'max_features', 
+                               'score_min', 'score_max', 'diff/score_max', 'time_cost'])
 
-grid_search = True
+grid_search = False
 if grid_search:
+    time_start = time.time() #開始計時
     for n_estimators in bound_n_estimators:
-        time_start = time.time() #開始計時
+        print('n_estimators = ', n_estimators)
+        
+        # 建立多個IF，計算多個score difference
         score_diff_list = []
         for i in range(IF_count):
-            params = [1, n_estimators, opt_max_samples, opt_max_features]
+            print('IF_count', i)
+            params = [[1, n_estimators, opt_max_samples, opt_max_features]]
             score_diff_list.append(unknown_func(params))
-            score_min = min(score_diff_list)
-            score_max = max(score_diff_list)
-            diff = score_max-score_min
-            
-            if (diff/score_min) < 0.1:
-                time_end = time.time()    #結束計時
-                time_c= time_end - time_start   #執行所花時間
-                result = result.append({
-                    'n_estimators': n_estimators,
-                    'max_samples': opt_max_samples, 
-                    'max_features': opt_max_features,
-                    'score_min': score_min,
-                    'score_max': score_max,
-                    'time_cost':time_c}, ignore_index=True)    
+
+        # 計算最好、最差的score differenc之間的落差
+        score_min = -max(score_diff_list)
+        score_max = -min(score_diff_list)
+        diff_presentage = (score_max - score_min) / score_max
+        
+        time_end = time.time()    #結束計時
+        time_c= time_end - time_start   #執行所花時間
+        
+        result = result.append({
+            'n_estimators': n_estimators,
+            'max_samples': opt_max_samples, 
+            'max_features': opt_max_features,
+            'score_min': score_min,
+            'score_max': score_max,
+            'diff_presentage': diff_presentage,
+            'time_cost':time_c}, ignore_index=True)    
     print(result.describe())
+
+#%%
+
+#%%
+plt.plot(result['n_estimators'], result['diff/score_max'], 'o:')
+plt.plot([20, 700], [0.1, 0.1], '-')
+plt.xlabel('n_estimators')
+plt.ylabel('max/(max-min)  (%)')
+
+
 
 #%%
 #
@@ -644,7 +579,7 @@ if grid_search:
 #%%
 print('GPyOpt Result...')
 
-
+bo_ex_labels = ['1 Isolation Forest', '3 Isolation Forest', '10 Isolation Forest', '20 Isolation Forest']
 opt_params_col = opt_params_list[0].columns
 for j in range(len(opt_params_col)):
     for i in range(len(opt_params_list)):
@@ -680,45 +615,6 @@ BO_IF.ConfusionMatrixBinary([1, 2], 'BO IF')
 BO_IF.ClassificationReportBinary()
 
 BO_IF.PlotScoreHist(10, 2)
-
-
-
-#%%
-print('Grid Search')
-
-bound_n_estimators = range(2, 200)
-bound_max_samples = range(2, int(X_test.shape[0] / 2))
-bound_max_features = range(3, 6)
-result = pd.DataFrame(columns=['n_estimators', 'max_samples', 'max_features', 'score_difference'])
-
-
-grid_search = True
-if grid_search:
-    time_start = time.time() #開始計時
-    for n_estimators in bound_n_estimators:
-        for max_samples in bound_max_samples:
-            for max_features in bound_max_features:
-                params = [n_estimators, max_samples, max_features]
-                score_difference = unknown_func(params)
-                result = result.append({
-                    'n_estimators': n_estimators,
-                    'max_samples': max_samples, 
-                    'max_features': max_features,
-                    'score_difference': score_difference}, ignore_index=True)
-    # result
-    time_end = time.time()    #結束計時
-    time_c= time_end - time_start   #執行所花時間
-    print('\t', 'time cost', time_c, 's')
-    
-    print(result.describe())
-    
-    print(result[result.score_difference>=-0.3][result.score_difference<=-0.27])
-    
-    good_result = result[result.score_difference<=-0.26]
-    
-    good_result = good_result[good_result.n_estimators >= 30]
-    
-    print(good_result.sort_values(by=['score_difference']))
 
 
 print('---End---')
