@@ -437,7 +437,7 @@ def BO_EX(experiment_count, unknown_func, initial_design_numdata, bound):
 #
 
 # Optimizer will try to find minimum, so we will add a "-" sign.
-def unknown_func(parameters):
+def score_difference_unknown_func(parameters):
     parameters = parameters[0]
     IF_count = int(parameters[0])
     diff_list = []
@@ -464,6 +464,23 @@ def unknown_func(parameters):
     
     return -diff_min
 
+
+def stable_n_estimator_unknown_func(IF_count, n_estimators, max_samples, max_features):
+    print('n_estimators = ', n_estimators)
+        
+    # 建立多個IF，計算多個score difference
+    score_diff_list = []
+    for i in range(IF_count):
+        params = [[1, n_estimators, max_samples, max_features]]
+        score_diff_list.append(score_difference_unknown_func(params))
+
+    # 計算最好、最差的score differenc之間的落差
+    score_min = -max(score_diff_list)
+    score_max = -min(score_diff_list)
+    diff_presentage = (score_max - score_min) / score_max
+    return score_min, score_max, diff_presentage
+
+
 #%%
 #
 # n_estimators 實驗
@@ -471,6 +488,7 @@ def unknown_func(parameters):
 
 
 # ----- Step 1: 固定n_estimators，找max_samples、max_feature -----
+bound_n_estimators = [1, 3000]
 # Bounds (NOTE: define continuous variables first, then discrete!)
 bound_1 = [   
     {'name': 'IF_count',
@@ -479,7 +497,7 @@ bound_1 = [
     
     {'name': 'n_estimators',
       'type': 'discrete',
-      'domain': range(1000, 1001)},
+      'domain': range(bound_n_estimators[1], bound_n_estimators[1]+1)},
     
     {'name': 'max_samples',
      'type': 'discrete',
@@ -493,7 +511,7 @@ bound_1 = [
 opt_params_list = []
 experiment_count = 1
 if experiment_count > 0:
-    opt_params_list.append(BO_EX(experiment_count,  unknown_func, 10, bound_1))
+    opt_params_list.append(BO_EX(experiment_count,  score_difference_unknown_func, 10, bound_1))
 
 # 第一階段找到的最佳samples, features
 # 代入第二階段
@@ -503,29 +521,53 @@ opt_max_features = int(opt_params_list[0].max_features)
 
 # ----- Step 2: 固定max_samples、max_feature，找n_estimators -----
 # bound 2
-IF_count = 30
-bound_n_estimators = range(20, 700, 20)
+def binary_search_n_estimators(low, high, stop_interval, threshold, max_samples, max_features):
+    upper_bound = high
+    stable_n_estimators = []
+    all_n_estimators = []
+    all_score_diff = []
+    while (high-low) >= stop_interval:         
+        mid = (high + low) // 2     # //: floor
+        print('mid =', mid)
+        all_n_estimators.append(mid)
+        
+        score_min, score_max, diff_presentage = stable_n_estimator_unknown_func(
+            IF_count=30, n_estimators=mid, 
+            max_samples=max_samples, max_features=max_features)
+        all_score_diff.append(diff_presentage)
+
+        if diff_presentage <= threshold:
+            stable_n_estimators.append(mid)
+            high = mid # 往左搜尋
+            mid = (high + low) // 2 
+        else: 
+            low = mid
+            mid = (high + low) // 2
+            
+    if len(stable_n_estimators) > 0:        
+        return all_score_diff, all_n_estimators, min(stable_n_estimators)
+    else:
+        return all_score_diff, all_n_estimators, upper_bound
+ 
+all_score_diff, all_n_estimators, stable_n_estimator = binary_search_n_estimators(low=bound_n_estimators[0], 
+                                                high=bound_n_estimators[1], 
+                                                stop_interval=50, threshold=0.1,
+                                                max_samples=opt_max_samples, 
+                                                max_features=opt_max_features)
+print(stable_n_estimator)
+
+
 
 result = pd.DataFrame(columns=['n_estimators', 'max_samples', 'max_features', 
                                'score_min', 'score_max', 'diff/score_max', 'time_cost'])
+bound_n_estimators = range(100, 3000, 100)
 
 grid_search = False
 if grid_search:
     time_start = time.time() #開始計時
     for n_estimators in bound_n_estimators:
-        print('n_estimators = ', n_estimators)
-        
-        # 建立多個IF，計算多個score difference
-        score_diff_list = []
-        for i in range(IF_count):
-            print('IF_count', i)
-            params = [[1, n_estimators, opt_max_samples, opt_max_features]]
-            score_diff_list.append(unknown_func(params))
-
-        # 計算最好、最差的score differenc之間的落差
-        score_min = -max(score_diff_list)
-        score_max = -min(score_diff_list)
-        diff_presentage = (score_max - score_min) / score_max
+        score_min, score_max, diff_presentage = stable_n_estimator_unknown_func(
+            30, n_estimators, opt_max_samples, opt_max_features)
         
         time_end = time.time()    #結束計時
         time_c= time_end - time_start   #執行所花時間
@@ -542,9 +584,15 @@ if grid_search:
 
 #%%
 
+plt.plot(all_n_estimators, all_score_diff, 'o:')
+plt.plot([bound_n_estimators[0], bound_n_estimators[1]], [0.1, 0.1], '-')
+plt.xlabel('n_estimators')
+plt.ylabel('max/(max-min)  (%)')
+
+
 #%%
-plt.plot(result['n_estimators'], result['diff/score_max'], 'o:')
-plt.plot([20, 700], [0.1, 0.1], '-')
+plt.plot(result['n_estimators'], result['diff_presentage'], 'o:')
+plt.plot([20, 1420], [0.1, 0.1], '-')
 plt.xlabel('n_estimators')
 plt.ylabel('max/(max-min)  (%)')
 
@@ -559,7 +607,7 @@ plt.ylabel('max/(max-min)  (%)')
 # experiment_count = 0
 # if experiment_count > 0:
 #     bo_ex_labels = ['1 Isolation Forest', '3 Isolation Forest', '10 Isolation Forest', '20 Isolation Forest']
-#     opt_params_list.append(BO_EX(experiment_count,  unknown_func, initial_design_numdata))
+#     opt_params_list.append(BO_EX(experiment_count,  score_difference_unknown_func, initial_design_numdata))
     # opt_params_list.append(BO_EX(experiment_count,  IF_3, initial_design_numdata))
     # opt_params_list.append(BO_EX(experiment_count, IF_10, initial_design_numdata))
     # opt_params_list.append(BO_EX(experiment_count, IF_20, initial_design_numdata))
