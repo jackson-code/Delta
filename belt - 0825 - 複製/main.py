@@ -413,7 +413,8 @@ def BO_EX(experiment_count, unknown_func, initial_design_numdata, bound):
         time_c= time_end - time_start   #執行所花時間
         print('\t', 'time cost', time_c, 's')
         
-        optimizer.plot_convergence()
+        # 畫收斂圖
+        # optimizer.plot_convergence()
         
         gp_opt = optimizer.X[np.argmin(optimizer.Y)]
         print('\t', gp_opt)
@@ -460,7 +461,7 @@ def score_difference_unknown_func(parameters):
         diff_list.append(min_anomaly_score['Anomaly_score'] - max_normal_score['Anomaly_score'])
     diff_min = min(diff_list)
     # diff_max = max(diff_list)
-    print(diff_min)
+    #print(diff_min)
     
     return -diff_min
 
@@ -481,6 +482,97 @@ def stable_n_estimator_unknown_func(IF_count, n_estimators, max_samples, max_fea
     return score_min, score_max, diff_presentage
 
 
+#%% 重複BO，看BO找到的samples分布
+bound_n_estimators = [1, 200]
+# Bounds (NOTE: define continuous variables first, then discrete!)
+bound_1 = [   
+    {'name': 'IF_count',
+      'type': 'discrete',
+      'domain': range(3, 4)}, # 設定range(想要的IF_count, IF_count+1)
+    
+    {'name': 'n_estimators',
+      'type': 'discrete',
+      'domain': range(bound_n_estimators[1], bound_n_estimators[1]+1)},
+    
+    {'name': 'max_samples',
+     'type': 'discrete',
+     'domain': range(2, X_test.shape[0])},
+
+    {'name': 'max_features',
+     'type': 'discrete',
+     'domain': range(3, 6)}
+]
+
+opt_params = pd.DataFrame()
+experiment_count = 1000
+if experiment_count > 0:
+    opt_params = BO_EX(experiment_count,  score_difference_unknown_func, 15, bound_1)
+
+
+#%%
+opt_params.to_pickle('pickle/1000_BO_(IF_Count_3)')
+samples_freq = opt_params.groupby(opt_params['max_samples'].values).size() 
+
+#%%
+count = 0
+# 95% confidence interval
+lower_bound = 0
+upper_bound = 0
+find_lower = False
+find_upper = False
+
+for f in samples_freq.index:
+    count += samples_freq[f]    
+    # 找95%信賴區間的下界
+    if count >= (len(opt_params) * 0.025):
+        if find_lower == False:
+            find_lower = True
+            lower_bound = f
+            print(f, samples_freq[f])
+    # 找95%信賴區間的上界
+    if count >= (len(opt_params) * 0.975):
+        if find_upper == False:
+            find_upper = True
+            upper_bound = f
+            print(f, samples_freq[f])
+#%%
+# 畫 samples 分布
+plt.figure(figsize=(20,5))
+plt.grid(True)
+
+# 95% confidence interval
+plt.plot([lower_bound, lower_bound], [0, samples_freq.max()],  ':', color='r', label='95% confidence interval')
+plt.text(lower_bound, samples_freq.max(), 'samples=' + str(lower_bound), ha='center', va='top')
+plt.plot([upper_bound, upper_bound], [0, samples_freq.max()],  ':', color='r')
+plt.text(upper_bound, samples_freq.max(), 'samples=' + str(upper_bound), ha='center', va='top')
+
+plt.plot(samples_freq, 'o')
+
+for a, b in zip(samples_freq.index, samples_freq.values):
+    plt.text(a, b, str(b), ha='left', va='top')
+
+plt.xticks(range(int(samples_freq.first_valid_index()-2), int(samples_freq.last_valid_index()), 10))
+plt.xlabel('samples')
+plt.ylabel('frequency')
+plt.title('samples distribution of 1000 times Bayesian Optimization')
+plt.legend()
+
+#%%
+# 畫 features 分布
+plt.grid(True)
+
+features_freq = opt_params.groupby(opt_params['max_features'].values).size() 
+plt.plot(features_freq, 'o')
+
+for a, b in zip(features_freq.index, features_freq.values):
+    plt.text(a, b, str(b), ha='left', va='top')
+
+plt.xlabel('features')
+plt.ylabel('frequency')
+plt.title('features distribution of 1000 times Bayesian Optimization')
+plt.legend()
+
+
 #%%
 #
 # n_estimators 實驗
@@ -488,7 +580,7 @@ def stable_n_estimator_unknown_func(IF_count, n_estimators, max_samples, max_fea
 
 
 # ----- Step 1: 固定n_estimators，找max_samples、max_feature -----
-bound_n_estimators = [1, 3000]
+bound_n_estimators = [1, 1000]
 # Bounds (NOTE: define continuous variables first, then discrete!)
 bound_1 = [   
     {'name': 'IF_count',
@@ -509,7 +601,7 @@ bound_1 = [
 ]
 
 opt_params_list = []
-experiment_count = 1
+experiment_count = 0
 if experiment_count > 0:
     opt_params_list.append(BO_EX(experiment_count,  score_difference_unknown_func, 10, bound_1))
 
@@ -548,23 +640,92 @@ def binary_search_n_estimators(low, high, stop_interval, threshold, max_samples,
         return all_score_diff, all_n_estimators, min(stable_n_estimators)
     else:
         return all_score_diff, all_n_estimators, upper_bound
- 
-all_score_diff, all_n_estimators, stable_n_estimator = binary_search_n_estimators(low=bound_n_estimators[0], 
-                                                high=bound_n_estimators[1], 
-                                                stop_interval=50, threshold=0.1,
-                                                max_samples=opt_max_samples, 
-                                                max_features=opt_max_features)
-print(stable_n_estimator)
+
+experiment_count = 0
+if experiment_count > 0:
+    time_start = time.time() #開始計時
+    all_score_diff, all_n_estimators, stable_n_estimator = binary_search_n_estimators(low=bound_n_estimators[0], 
+                                                    high=bound_n_estimators[1], 
+                                                    stop_interval=50, threshold=0.1,
+                                                    max_samples=opt_max_samples, 
+                                                    max_features=opt_max_features)
+    time_end = time.time()    #結束計時
+    time_c= time_end - time_start   #執行所花時間
+    print('minimum stable n_estimator =', stable_n_estimator)
+
+
+
+def binary_search_n_estimators_dynamic_high(low, high, stop_interval, threshold, max_samples, max_features):
+    stable_n_estimators = []
+    all_n_estimators = []
+    all_score_diff = []
+    
+    # 決定high bound
+    score_min, score_max, diff_presentage = stable_n_estimator_unknown_func(
+        IF_count=30, n_estimators=high, 
+        max_samples=max_samples, max_features=max_features)
+    
+    if diff_presentage < (threshold*0.9):
+        stable_n_estimators.append(high)
+        all_n_estimators.append(high)
+        all_score_diff.append(diff_presentage)
+    else:
+        while diff_presentage > (threshold*0.9):
+            low = high
+            high = high * 2
+            score_min, score_max, diff_presentage = stable_n_estimator_unknown_func(
+                IF_count=30, n_estimators=high, 
+                max_samples=max_samples, max_features=max_features)
+            
+            all_n_estimators.append(high)
+            all_score_diff.append(diff_presentage)
+    stable_n_estimators.append(high)
+    
+
+    # binary search
+    while (high-low) >= stop_interval:         
+        mid = (high + low) // 2     # //: floor
+        print('mid =', mid)
+        all_n_estimators.append(mid)
+        
+        score_min, score_max, diff_presentage = stable_n_estimator_unknown_func(
+            IF_count=30, n_estimators=mid, 
+            max_samples=max_samples, max_features=max_features)
+        all_score_diff.append(diff_presentage)
+
+        if diff_presentage <= threshold:
+            stable_n_estimators.append(mid)
+            high = mid # 往左搜尋
+            mid = (high + low) // 2 
+        else: 
+            low = mid
+            mid = (high + low) // 2
+                   
+    return all_score_diff, all_n_estimators, min(stable_n_estimators)
+
+experiment_count = 0
+if experiment_count > 0:
+    time_start = time.time() #開始計時
+    all_score_diff, all_n_estimators, stable_n_estimator = binary_search_n_estimators_dynamic_high(low=bound_n_estimators[0], 
+                                                    high=300, 
+                                                    stop_interval=50, threshold=0.1,
+                                                    max_samples=opt_max_samples, 
+                                                    max_features=opt_max_features)
+    time_end = time.time()    #結束計時
+    time_c= time_end - time_start   #執行所花時間
+    print('minimum stable n_estimator =', stable_n_estimator)
+
+
+
 
 
 
 result = pd.DataFrame(columns=['n_estimators', 'max_samples', 'max_features', 
                                'score_min', 'score_max', 'diff/score_max', 'time_cost'])
-bound_n_estimators = range(100, 3000, 100)
-
 grid_search = False
 if grid_search:
     time_start = time.time() #開始計時
+    bound_n_estimators = range(100, 3000, 100)
     for n_estimators in bound_n_estimators:
         score_min, score_max, diff_presentage = stable_n_estimator_unknown_func(
             30, n_estimators, opt_max_samples, opt_max_features)
@@ -585,7 +746,12 @@ if grid_search:
 #%%
 
 plt.plot(all_n_estimators, all_score_diff, 'o:')
+# stable threhold
 plt.plot([bound_n_estimators[0], bound_n_estimators[1]], [0.1, 0.1], '-')
+
+for a, b in zip(all_n_estimators, all_score_diff):
+    plt.text(a, b, str(a), ha='left', va='top')
+
 plt.xlabel('n_estimators')
 plt.ylabel('max/(max-min)  (%)')
 
