@@ -54,6 +54,9 @@ class IF():
     
         plt.plot(axis_x, self.all_score)
         
+    def ScoreDifference(self):
+        return self.abnormal_score.min() - self.normal_score.max()
+        
     def Predict(self, X_test, y_test_bi, y_true_mul, labels):        
         self.X_test = X_test
         

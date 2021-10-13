@@ -483,12 +483,13 @@ def stable_n_estimator_unknown_func(IF_count, n_estimators, max_samples, max_fea
 
 
 #%% 重複BO，看BO找到的samples分布
+
 bound_n_estimators = [1, 200]
 # Bounds (NOTE: define continuous variables first, then discrete!)
 bound_1 = [   
     {'name': 'IF_count',
       'type': 'discrete',
-      'domain': range(3, 4)}, # 設定range(想要的IF_count, IF_count+1)
+      'domain': range(1, 2)}, # 設定range(想要的IF_count, IF_count+1)
     
     {'name': 'n_estimators',
       'type': 'discrete',
@@ -504,73 +505,121 @@ bound_1 = [
 ]
 
 opt_params = pd.DataFrame()
-experiment_count = 1000
+experiment_count = 0
 if experiment_count > 0:
+    # run EX
     opt_params = BO_EX(experiment_count,  score_difference_unknown_func, 15, bound_1)
 
+    # 存實驗結果
+    opt_params.to_pickle('pickle/1000_BO')
+    
+    #
+    # ----- 畫samples分布 ------
+    #
+    
+    # (1)計算每種max_samples出現的頻率
+    samples_freq = opt_params.groupby(opt_params['max_samples'].values).size()
 
-#%%
-opt_params.to_pickle('pickle/1000_BO_(IF_Count_3)')
-samples_freq = opt_params.groupby(opt_params['max_samples'].values).size() 
+    count = 0
+    # (2)find 95% confidence interval
+    lower_bound = 0
+    upper_bound = 0
+    find_lower = False
+    find_upper = False
+    
+    for f in samples_freq.index:
+        count += samples_freq[f]    
+        # 找95%信賴區間的下界
+        if count >= (len(opt_params) * 0.025):
+            if find_lower == False:
+                find_lower = True
+                lower_bound = f
+                print(f, samples_freq[f])
+        # 找95%信賴區間的上界
+        if count >= (len(opt_params) * 0.975):
+            if find_upper == False:
+                find_upper = True
+                upper_bound = f
+                print(f, samples_freq[f])
 
-#%%
-count = 0
-# 95% confidence interval
-lower_bound = 0
-upper_bound = 0
-find_lower = False
-find_upper = False
+    # (3) plot
+    plt.figure(figsize=(20,5))
+    plt.grid(True)
+    
+    # plot 95% confidence interval
+    plt.plot([lower_bound, lower_bound], [0, samples_freq.max()],  ':', color='r', label='95% confidence interval')
+    plt.text(lower_bound, samples_freq.max(), 'samples=' + str(lower_bound), ha='center', va='top')
+    plt.plot([upper_bound, upper_bound], [0, samples_freq.max()],  ':', color='r')
+    plt.text(upper_bound, samples_freq.max(), 'samples=' + str(upper_bound), ha='center', va='top')
+    
+    # 畫 samples 分布
+    plt.plot(samples_freq, 'o')
+    # 標記每個點的y值
+    for a, b in zip(samples_freq.index, samples_freq.values):
+        plt.text(a, b, str(b), ha='left', va='top')
+    
+    plt.xticks(range(int(samples_freq.first_valid_index()-2), int(samples_freq.last_valid_index()), 10))
+    plt.xlabel('samples')
+    plt.ylabel('frequency')
+    plt.title('samples distribution of 1000 times Bayesian Optimization')
+    plt.legend()
 
-for f in samples_freq.index:
-    count += samples_freq[f]    
-    # 找95%信賴區間的下界
-    if count >= (len(opt_params) * 0.025):
-        if find_lower == False:
-            find_lower = True
-            lower_bound = f
-            print(f, samples_freq[f])
-    # 找95%信賴區間的上界
-    if count >= (len(opt_params) * 0.975):
-        if find_upper == False:
-            find_upper = True
-            upper_bound = f
-            print(f, samples_freq[f])
-#%%
-# 畫 samples 分布
-plt.figure(figsize=(20,5))
-plt.grid(True)
+    #
+    # ----- 畫features分布 ------
+    #
 
-# 95% confidence interval
-plt.plot([lower_bound, lower_bound], [0, samples_freq.max()],  ':', color='r', label='95% confidence interval')
-plt.text(lower_bound, samples_freq.max(), 'samples=' + str(lower_bound), ha='center', va='top')
-plt.plot([upper_bound, upper_bound], [0, samples_freq.max()],  ':', color='r')
-plt.text(upper_bound, samples_freq.max(), 'samples=' + str(upper_bound), ha='center', va='top')
+    plt.grid(True)
+    
+    features_freq = opt_params.groupby(opt_params['max_features'].values).size() 
+    plt.plot(features_freq, 'o')
+    
+    for a, b in zip(features_freq.index, features_freq.values):
+        plt.text(a, b, str(b), ha='left', va='top')
+    
+    plt.xlabel('features')
+    plt.ylabel('frequency')
+    plt.title('features distribution of 1000 times Bayesian Optimization')
+    plt.legend()
 
-plt.plot(samples_freq, 'o')
+#%% 觀察相同的samples之下，建出來的IF的score difference分布
+experiment_count = 0
+samples = [50, 100, 140]
 
-for a, b in zip(samples_freq.index, samples_freq.values):
-    plt.text(a, b, str(b), ha='left', va='top')
+# run ex
+for j in range(len(samples)):
+    score_differences = pd.Series([])
+    if experiment_count <= 0:
+        break;
+    # 重複建IF
+    for i in range(experiment_count):
+        print(i)
+        temp_if = myIsolationForest.IF(abnormal_ratio, n_estimators=200, max_samples=samples[j], max_features=3, X_train=X_train)
+        temp_if.Predict(X_test, y_test_bi, y_test, labels)        
+        # score difference取到小數點後3位
+        score_differences[i] = round(temp_if.ScoreDifference(), 3)
+        
+    # 計算每種score difference出現的次數   
+    sd_freq = score_differences.value_counts()
 
-plt.xticks(range(int(samples_freq.first_valid_index()-2), int(samples_freq.last_valid_index()), 10))
-plt.xlabel('samples')
-plt.ylabel('frequency')
-plt.title('samples distribution of 1000 times Bayesian Optimization')
-plt.legend()
+    #
+    # 畫score differnce 分布
+    #
+    plt.figure(figsize=(20,5))
+    plt.grid(True)
+     
+    plt.plot(sd_freq.index, sd_freq, 'o')
+    
+    # 標每個點的y值
+    for a, b in zip(sd_freq.index, sd_freq):
+        plt.text(a, b, str(b), ha='left', va='top')
+    
+    plt.xlabel('score difference')
+    plt.ylabel('frequency')
+    plt.title('samplels =' + str(samples[j]))
 
-#%%
-# 畫 features 分布
-plt.grid(True)
+#%% 
 
-features_freq = opt_params.groupby(opt_params['max_features'].values).size() 
-plt.plot(features_freq, 'o')
 
-for a, b in zip(features_freq.index, features_freq.values):
-    plt.text(a, b, str(b), ha='left', va='top')
-
-plt.xlabel('features')
-plt.ylabel('frequency')
-plt.title('features distribution of 1000 times Bayesian Optimization')
-plt.legend()
 
 
 #%%
