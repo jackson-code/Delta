@@ -484,7 +484,7 @@ def stable_n_estimator_unknown_func(IF_count, n_estimators, max_samples, max_fea
 
 #%% 重複BO，看BO找到的samples分布
 
-bound_n_estimators = [1, 200]
+bound_n_estimators = [1, 700]
 # Bounds (NOTE: define continuous variables first, then discrete!)
 bound_1 = [   
     {'name': 'IF_count',
@@ -505,14 +505,16 @@ bound_1 = [
 ]
 
 opt_params = pd.DataFrame()
-experiment_count = 0
+experiment_count = 1000
 if experiment_count > 0:
     # run EX
     opt_params = BO_EX(experiment_count,  score_difference_unknown_func, 15, bound_1)
 
     # 存實驗結果
-    opt_params.to_pickle('pickle/1000_BO')
-    
+    opt_params.to_pickle('pickle/1000_BO_500TreeCount')
+
+#%%
+if experiment_count > 0:    
     #
     # ----- 畫samples分布 ------
     #
@@ -567,7 +569,7 @@ if experiment_count > 0:
     #
     # ----- 畫features分布 ------
     #
-
+    plt.figure(figsize=(7,5))
     plt.grid(True)
     
     features_freq = opt_params.groupby(opt_params['max_features'].values).size() 
@@ -617,56 +619,12 @@ for j in range(len(samples)):
     plt.ylabel('frequency')
     plt.title('samplels =' + str(samples[j]))
 
-#%% 
-
-
-
-
-#%%
-#
-# n_estimators 實驗
-#
-
-
-# ----- Step 1: 固定n_estimators，找max_samples、max_feature -----
-bound_n_estimators = [1, 1000]
-# Bounds (NOTE: define continuous variables first, then discrete!)
-bound_1 = [   
-    {'name': 'IF_count',
-      'type': 'discrete',
-      'domain': range(1, 2)}, # 設定range(想要的IF_count, IF_count+1)
-    
-    {'name': 'n_estimators',
-      'type': 'discrete',
-      'domain': range(bound_n_estimators[1], bound_n_estimators[1]+1)},
-    
-    {'name': 'max_samples',
-     'type': 'discrete',
-     'domain': range(2, X_test.shape[0])},
-
-    {'name': 'max_features',
-     'type': 'discrete',
-     'domain': range(3, 6)}
-]
-
-opt_params_list = []
-experiment_count = 0
-if experiment_count > 0:
-    opt_params_list.append(BO_EX(experiment_count,  score_difference_unknown_func, 10, bound_1))
-
-# 第一階段找到的最佳samples, features
-# 代入第二階段
-opt_max_samples = int(opt_params_list[0].max_samples)
-opt_max_features = int(opt_params_list[0].max_features)
-
-
-# ----- Step 2: 固定max_samples、max_feature，找n_estimators -----
-# bound 2
+#%% n_estimators 穩定度 實驗 method
 def binary_search_n_estimators(low, high, stop_interval, threshold, max_samples, max_features):
     upper_bound = high
     stable_n_estimators = []
     all_n_estimators = []
-    all_score_diff = []
+    diff_presentage_list = []
     while (high-low) >= stop_interval:         
         mid = (high + low) // 2     # //: floor
         print('mid =', mid)
@@ -675,7 +633,7 @@ def binary_search_n_estimators(low, high, stop_interval, threshold, max_samples,
         score_min, score_max, diff_presentage = stable_n_estimator_unknown_func(
             IF_count=30, n_estimators=mid, 
             max_samples=max_samples, max_features=max_features)
-        all_score_diff.append(diff_presentage)
+        diff_presentage_list.append(diff_presentage)
 
         if diff_presentage <= threshold:
             stable_n_estimators.append(mid)
@@ -686,29 +644,16 @@ def binary_search_n_estimators(low, high, stop_interval, threshold, max_samples,
             mid = (high + low) // 2
             
     if len(stable_n_estimators) > 0:        
-        return all_score_diff, all_n_estimators, min(stable_n_estimators)
+        return diff_presentage_list, all_n_estimators, min(stable_n_estimators)
     else:
-        return all_score_diff, all_n_estimators, upper_bound
-
-experiment_count = 0
-if experiment_count > 0:
-    time_start = time.time() #開始計時
-    all_score_diff, all_n_estimators, stable_n_estimator = binary_search_n_estimators(low=bound_n_estimators[0], 
-                                                    high=bound_n_estimators[1], 
-                                                    stop_interval=50, threshold=0.1,
-                                                    max_samples=opt_max_samples, 
-                                                    max_features=opt_max_features)
-    time_end = time.time()    #結束計時
-    time_c= time_end - time_start   #執行所花時間
-    print('minimum stable n_estimator =', stable_n_estimator)
-
-
-
+        return diff_presentage_list, all_n_estimators, upper_bound
+    
+    
 def binary_search_n_estimators_dynamic_high(low, high, stop_interval, threshold, max_samples, max_features):
     stable_n_estimators = []
     all_n_estimators = []
-    all_score_diff = []
-    
+    diff_presentage_list = []
+    stable_diff_presentage_list = []    
     # 決定high bound
     score_min, score_max, diff_presentage = stable_n_estimator_unknown_func(
         IF_count=30, n_estimators=high, 
@@ -716,8 +661,9 @@ def binary_search_n_estimators_dynamic_high(low, high, stop_interval, threshold,
     
     if diff_presentage < (threshold*0.9):
         stable_n_estimators.append(high)
+        stable_diff_presentage_list.append(diff_presentage)
         all_n_estimators.append(high)
-        all_score_diff.append(diff_presentage)
+        diff_presentage_list.append(diff_presentage)       
     else:
         while diff_presentage > (threshold*0.9):
             low = high
@@ -727,8 +673,9 @@ def binary_search_n_estimators_dynamic_high(low, high, stop_interval, threshold,
                 max_samples=max_samples, max_features=max_features)
             
             all_n_estimators.append(high)
-            all_score_diff.append(diff_presentage)
+            diff_presentage_list.append(diff_presentage)
     stable_n_estimators.append(high)
+    stable_diff_presentage_list.append(diff_presentage)
     
 
     # binary search
@@ -740,34 +687,180 @@ def binary_search_n_estimators_dynamic_high(low, high, stop_interval, threshold,
         score_min, score_max, diff_presentage = stable_n_estimator_unknown_func(
             IF_count=30, n_estimators=mid, 
             max_samples=max_samples, max_features=max_features)
-        all_score_diff.append(diff_presentage)
+        diff_presentage_list.append(diff_presentage)
 
         if diff_presentage <= threshold:
             stable_n_estimators.append(mid)
+            stable_diff_presentage_list.append(diff_presentage)
             high = mid # 往左搜尋
             mid = (high + low) // 2 
         else: 
             low = mid
             mid = (high + low) // 2
-                   
-    return all_score_diff, all_n_estimators, min(stable_n_estimators)
-
-experiment_count = 0
-if experiment_count > 0:
-    time_start = time.time() #開始計時
-    all_score_diff, all_n_estimators, stable_n_estimator = binary_search_n_estimators_dynamic_high(low=bound_n_estimators[0], 
-                                                    high=300, 
-                                                    stop_interval=50, threshold=0.1,
-                                                    max_samples=opt_max_samples, 
-                                                    max_features=opt_max_features)
-    time_end = time.time()    #結束計時
-    time_c= time_end - time_start   #執行所花時間
-    print('minimum stable n_estimator =', stable_n_estimator)
+    
+    # 最小的穩定n_estimator
+    stable_n_estimator = min(stable_n_estimators)
+    # 與最小的穩定n_estimator
+    stable_diff_presentage = stable_diff_presentage_list[stable_n_estimators.index(stable_n_estimator)]
+    
+    return diff_presentage_list, all_n_estimators, stable_n_estimator, stable_diff_presentage
 
 
+#%%
+#
+# n_estimators 穩定度 實驗
+#
+max_samples_list = []
+max_features_list = []
+stable_diff_presentage_list = []
+all_n_estimators = []
+stable_n_estimators = [3000]
+
+# 迭代
+iteration_count = 1
+for i in range(iteration_count):
+    print('Iteration', i)
+    #
+    # ----- Step 1: 固定n_estimators，找max_samples、max_feature -----
+    #
+    
+    # Bounds (NOTE: define continuous variables first, then discrete!)
+    bound_1 = [   
+        {'name': 'IF_count',
+          'type': 'discrete',
+          'domain': range(1, 2)}, # 設定range(想要的IF_count, IF_count+1)
+        
+        {'name': 'n_estimators',
+          'type': 'discrete',
+          'domain': range(stable_n_estimators[i], stable_n_estimators[i]+1)},
+        
+        {'name': 'max_samples',
+         'type': 'discrete',
+         'domain': range(2, X_test.shape[0])},
+    
+        {'name': 'max_features',
+         'type': 'discrete',
+         'domain': range(3, 6)}
+    ]
+    
+    
+    experiment_count = 1
+    if experiment_count > 0:
+        print('Step 1')
+        print('stable_n_estimators = ', stable_n_estimators[i])
+        opt_params = BO_EX(experiment_count,  score_difference_unknown_func, 15, bound_1)
+    
+    # 第一階段找到的最佳samples, features
+    # 代入第二階段
+    print('opt_max_samples =', opt_params.max_samples)
+    print('opt_max_features =', opt_params.max_features)
+    max_samples_list.append(int(opt_params.max_samples))
+    max_features_list.append(int(opt_params.max_features))
+    
+
+
+    #
+    # ----- Step 2: 固定max_samples、max_feature，找n_estimators -----
+    #
+    
+    experiment_count = 0
+    if experiment_count > 0:
+        time_start = time.time() #開始計時
+        diff_presentage_list, all_n_estimators, stable_n_estimator = binary_search_n_estimators(low=bound_n_estimators[0], 
+                                                        high=bound_n_estimators[1], 
+                                                        stop_interval=50, threshold=0.1,
+                                                        max_samples=opt_params.max_samples, 
+                                                        max_features=opt_params.max_features)
+        time_end = time.time()    #結束計時
+        time_c= time_end - time_start   #執行所花時間
+        print('minimum stable n_estimator =', stable_n_estimator)
+
+    experiment_count = 1
+    if experiment_count > 0:
+        print('Step 2')
+        time_start = time.time() #開始計時
+        diff_presentage_list, all_n_estimators, stable_n_estimator, stable_diff_presentage = binary_search_n_estimators_dynamic_high(low=bound_n_estimators[0], 
+                                                        high=1000, 
+                                                        stop_interval=50, threshold=0.01,
+                                                        max_samples=opt_params.max_samples, 
+                                                        max_features=opt_params.max_features)
+        time_end = time.time()    #結束計時
+        time_c= time_end - time_start   #執行所花時間
+        print('minimum stable n_estimator =', stable_n_estimator)
+        stable_n_estimators.append(stable_n_estimator)
+        print('stable_diff_presentage =', stable_diff_presentage)
+        stable_diff_presentage_list.append(stable_diff_presentage)
+        
+# 刪除初始設定的很大的n_estimator
+del(stable_n_estimators[0])
+
+#%%
 
 
 
+#%% 
+
+fig_width = 20
+
+#
+# stable n_estimators
+#
+plt.figure(figsize=(fig_width,5))
+plt.grid(True)
+
+plt.plot(range(iteration_count), stable_n_estimators, 'o:')
+plt.xlabel('iteration', fontsize=30)
+plt.ylabel('tree count', fontsize=30)
+
+
+#
+# stable_diff_presentage
+#
+plt.figure(figsize=(fig_width,5))
+plt.grid(True)
+plt.plot(range(iteration_count), stable_diff_presentage_list, 'o:')
+plt.xlabel('iteration', fontsize=30)
+plt.ylabel('stable percentage', fontsize=30)
+
+#
+# max smaples
+#
+plt.figure(figsize=(fig_width,5))
+plt.grid(True)
+plt.plot(range(iteration_count), max_samples_list, 'o:')
+plt.xlabel('iteration', fontsize=30)
+plt.ylabel('samples', fontsize=30)
+
+#
+# max features
+#
+plt.figure(figsize=(fig_width,5))
+plt.grid(True)
+plt.plot(range(iteration_count), max_features_list, 'o:')
+plt.xlabel('iteration', fontsize=30)
+plt.ylabel('features', fontsize=30)
+    
+#%%
+
+plt.plot(all_n_estimators, diff_presentage_list, 'o:')
+# stable threhold
+plt.plot([bound_n_estimators[0], bound_n_estimators[1]], [0.1, 0.1], '-')
+
+for a, b in zip(all_n_estimators, diff_presentage_list):
+    plt.text(a, b, str(a), ha='left', va='top')
+
+plt.xlabel('n_estimators')
+plt.ylabel('max/(max-min)  (%)')
+
+
+#%%
+# plt.plot(result['n_estimators'], result['diff_presentage'], 'o:')
+# plt.plot([20, 1420], [0.1, 0.1], '-')
+# plt.xlabel('n_estimators')
+# plt.ylabel('max/(max-min)  (%)')
+
+
+#%% Grid search
 
 result = pd.DataFrame(columns=['n_estimators', 'max_samples', 'max_features', 
                                'score_min', 'score_max', 'diff/score_max', 'time_cost'])
@@ -791,26 +884,6 @@ if grid_search:
             'diff_presentage': diff_presentage,
             'time_cost':time_c}, ignore_index=True)    
     print(result.describe())
-
-#%%
-
-plt.plot(all_n_estimators, all_score_diff, 'o:')
-# stable threhold
-plt.plot([bound_n_estimators[0], bound_n_estimators[1]], [0.1, 0.1], '-')
-
-for a, b in zip(all_n_estimators, all_score_diff):
-    plt.text(a, b, str(a), ha='left', va='top')
-
-plt.xlabel('n_estimators')
-plt.ylabel('max/(max-min)  (%)')
-
-
-#%%
-plt.plot(result['n_estimators'], result['diff_presentage'], 'o:')
-plt.plot([20, 1420], [0.1, 0.1], '-')
-plt.xlabel('n_estimators')
-plt.ylabel('max/(max-min)  (%)')
-
 
 
 #%%
