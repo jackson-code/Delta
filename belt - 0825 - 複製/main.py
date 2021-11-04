@@ -27,6 +27,7 @@ import Preprocess.StatisticValue as PreStatVal
 import dataToC.dataToC as dataToC
 import dataFromC.dataFromC as dataFromC
 import IsolationForest.IsolationForest as myIsolationForest
+import TreeCountSearch
 
 #%%
 def MergeCsv():  
@@ -402,7 +403,7 @@ def BO_EX(experiment_count, unknown_func, initial_design_numdata, bound):
         optimizer = GPyOpt.methods.BayesianOptimization(
             f=unknown_func,
             domain=bound,
-            acquisition_type ='MPI',
+            acquisition_type ='EI',
             acquisition_par = 0.1,
             exact_eval=True, 
             initial_design_numdata=initial_design_numdata)
@@ -438,7 +439,7 @@ def BO_EX(experiment_count, unknown_func, initial_design_numdata, bound):
 #
 
 # Optimizer will try to find minimum, so we will add a "-" sign.
-def score_difference_unknown_func(parameters):
+def score_difference_func(parameters):
     parameters = parameters[0]
     IF_count = int(parameters[0])
     diff_list = []
@@ -466,14 +467,14 @@ def score_difference_unknown_func(parameters):
     return -diff_min
 
 
-def stable_n_estimator_unknown_func(IF_count, n_estimators, max_samples, max_features):
+def stable_tree_count_func(IF_count, n_estimators, max_samples, max_features):
     print('n_estimators = ', n_estimators)
         
     # 建立多個IF，計算多個score difference
     score_diff_list = []
     for i in range(IF_count):
         params = [[1, n_estimators, max_samples, max_features]]
-        score_diff_list.append(score_difference_unknown_func(params))
+        score_diff_list.append(score_difference_func(params))
 
     # 計算最好、最差的score differenc之間的落差
     score_min = -max(score_diff_list)
@@ -484,7 +485,7 @@ def stable_n_estimator_unknown_func(IF_count, n_estimators, max_samples, max_fea
 
 #%% 重複BO，看BO找到的samples分布
 
-bound_n_estimators = [1, 700]
+bound_n_estimators = [1, 200]
 # Bounds (NOTE: define continuous variables first, then discrete!)
 bound_1 = [   
     {'name': 'IF_count',
@@ -505,10 +506,10 @@ bound_1 = [
 ]
 
 opt_params = pd.DataFrame()
-experiment_count = 1000
+experiment_count = 0
 if experiment_count > 0:
     # run EX
-    opt_params = BO_EX(experiment_count,  score_difference_unknown_func, 15, bound_1)
+    opt_params = BO_EX(experiment_count,  score_difference_func, 15, bound_1)
 
     # 存實驗結果
     opt_params.to_pickle('pickle/1000_BO_500TreeCount')
@@ -619,109 +620,27 @@ for j in range(len(samples)):
     plt.ylabel('frequency')
     plt.title('samplels =' + str(samples[j]))
 
-#%% n_estimators 穩定度 實驗 method
-def binary_search_n_estimators(low, high, stop_interval, threshold, max_samples, max_features):
-    upper_bound = high
-    stable_n_estimators = []
-    all_n_estimators = []
-    diff_presentage_list = []
-    while (high-low) >= stop_interval:         
-        mid = (high + low) // 2     # //: floor
-        print('mid =', mid)
-        all_n_estimators.append(mid)
-        
-        score_min, score_max, diff_presentage = stable_n_estimator_unknown_func(
-            IF_count=30, n_estimators=mid, 
-            max_samples=max_samples, max_features=max_features)
-        diff_presentage_list.append(diff_presentage)
-
-        if diff_presentage <= threshold:
-            stable_n_estimators.append(mid)
-            high = mid # 往左搜尋
-            mid = (high + low) // 2 
-        else: 
-            low = mid
-            mid = (high + low) // 2
-            
-    if len(stable_n_estimators) > 0:        
-        return diff_presentage_list, all_n_estimators, min(stable_n_estimators)
-    else:
-        return diff_presentage_list, all_n_estimators, upper_bound
-    
-    
-def binary_search_n_estimators_dynamic_high(low, high, stop_interval, threshold, max_samples, max_features):
-    stable_n_estimators = []
-    all_n_estimators = []
-    diff_presentage_list = []
-    stable_diff_presentage_list = []    
-    # 決定high bound
-    score_min, score_max, diff_presentage = stable_n_estimator_unknown_func(
-        IF_count=30, n_estimators=high, 
-        max_samples=max_samples, max_features=max_features)
-    
-    if diff_presentage < (threshold*0.9):
-        stable_n_estimators.append(high)
-        stable_diff_presentage_list.append(diff_presentage)
-        all_n_estimators.append(high)
-        diff_presentage_list.append(diff_presentage)       
-    else:
-        while diff_presentage > (threshold*0.9):
-            low = high
-            high = high * 2
-            score_min, score_max, diff_presentage = stable_n_estimator_unknown_func(
-                IF_count=30, n_estimators=high, 
-                max_samples=max_samples, max_features=max_features)
-            
-            all_n_estimators.append(high)
-            diff_presentage_list.append(diff_presentage)
-    stable_n_estimators.append(high)
-    stable_diff_presentage_list.append(diff_presentage)
-    
-
-    # binary search
-    while (high-low) >= stop_interval:         
-        mid = (high + low) // 2     # //: floor
-        print('mid =', mid)
-        all_n_estimators.append(mid)
-        
-        score_min, score_max, diff_presentage = stable_n_estimator_unknown_func(
-            IF_count=30, n_estimators=mid, 
-            max_samples=max_samples, max_features=max_features)
-        diff_presentage_list.append(diff_presentage)
-
-        if diff_presentage <= threshold:
-            stable_n_estimators.append(mid)
-            stable_diff_presentage_list.append(diff_presentage)
-            high = mid # 往左搜尋
-            mid = (high + low) // 2 
-        else: 
-            low = mid
-            mid = (high + low) // 2
-    
-    # 最小的穩定n_estimator
-    stable_n_estimator = min(stable_n_estimators)
-    # 與最小的穩定n_estimator
-    stable_diff_presentage = stable_diff_presentage_list[stable_n_estimators.index(stable_n_estimator)]
-    
-    return diff_presentage_list, all_n_estimators, stable_n_estimator, stable_diff_presentage
-
-
 #%%
 #
 # n_estimators 穩定度 實驗
 #
-max_samples_list = []
-max_features_list = []
+
+# 初始設一個極大的tree count(保證穩定)，然後用BO找到feature, samples
+stable_tree_count = [200]
+# 設定穩定度，會找到此穩定度對應的tree count
+stable_threshold = 0.5
+
+samples_list = []
+features_list = []
 stable_diff_presentage_list = []
-all_n_estimators = []
-stable_n_estimators = [3000]
+all_tree_count = []
 
 # 迭代
 iteration_count = 1
 for i in range(iteration_count):
     print('Iteration', i)
     #
-    # ----- Step 1: 固定n_estimators，找max_samples、max_feature -----
+    # ----- Step 1: 固定tree count，找samples、feature -----
     #
     
     # Bounds (NOTE: define continuous variables first, then discrete!)
@@ -732,7 +651,7 @@ for i in range(iteration_count):
         
         {'name': 'n_estimators',
           'type': 'discrete',
-          'domain': range(stable_n_estimators[i], stable_n_estimators[i]+1)},
+          'domain': range(stable_tree_count[i], stable_tree_count[i]+1)},
         
         {'name': 'max_samples',
          'type': 'discrete',
@@ -747,68 +666,67 @@ for i in range(iteration_count):
     experiment_count = 1
     if experiment_count > 0:
         print('Step 1')
-        print('stable_n_estimators = ', stable_n_estimators[i])
-        opt_params = BO_EX(experiment_count,  score_difference_unknown_func, 15, bound_1)
+        print('stable_tree_count = ', stable_tree_count[i])
+        opt_params = BO_EX(experiment_count,  score_difference_func, 15, bound_1)
     
     # 第一階段找到的最佳samples, features
     # 代入第二階段
-    print('opt_max_samples =', opt_params.max_samples)
-    print('opt_max_features =', opt_params.max_features)
-    max_samples_list.append(int(opt_params.max_samples))
-    max_features_list.append(int(opt_params.max_features))
-    
+    print('opt_samples =', opt_params.max_samples)
+    print('opt_features =', opt_params.max_features)
+    samples_list.append(int(opt_params.max_samples))
+    features_list.append(int(opt_params.max_features))   
 
 
     #
     # ----- Step 2: 固定max_samples、max_feature，找n_estimators -----
     #
-    
-    experiment_count = 0
-    if experiment_count > 0:
-        time_start = time.time() #開始計時
-        diff_presentage_list, all_n_estimators, stable_n_estimator = binary_search_n_estimators(low=bound_n_estimators[0], 
-                                                        high=bound_n_estimators[1], 
-                                                        stop_interval=50, threshold=0.1,
-                                                        max_samples=opt_params.max_samples, 
-                                                        max_features=opt_params.max_features)
-        time_end = time.time()    #結束計時
-        time_c= time_end - time_start   #執行所花時間
-        print('minimum stable n_estimator =', stable_n_estimator)
 
     experiment_count = 1
     if experiment_count > 0:
         print('Step 2')
         time_start = time.time() #開始計時
-        diff_presentage_list, all_n_estimators, stable_n_estimator, stable_diff_presentage = binary_search_n_estimators_dynamic_high(low=bound_n_estimators[0], 
-                                                        high=1000, 
-                                                        stop_interval=50, threshold=0.01,
+        diff_presentage_list, all_tree_count, stable_n_estimator, stable_diff_presentage = TreeCountSearch.binary_search_dynamic_high(low=bound_n_estimators[0], 
+                                                        high=100, 
+                                                        stop_interval=50, threshold=stable_threshold,
                                                         max_samples=opt_params.max_samples, 
-                                                        max_features=opt_params.max_features)
+                                                        max_features=opt_params.max_features,
+                                                        stable_tree_count_func=stable_tree_count_func)
         time_end = time.time()    #結束計時
         time_c= time_end - time_start   #執行所花時間
         print('minimum stable n_estimator =', stable_n_estimator)
-        stable_n_estimators.append(stable_n_estimator)
+        stable_tree_count.append(stable_n_estimator)
         print('stable_diff_presentage =', stable_diff_presentage)
         stable_diff_presentage_list.append(stable_diff_presentage)
         
-# 刪除初始設定的很大的n_estimator
-del(stable_n_estimators[0])
-
+# 刪除初始設定的很大的 tree count，方便後面作圖
+del(stable_tree_count[0])
 #%%
+# 畫binary search的過程
 
+plt.figure(figsize=(20,17))
+plt.grid(True)
+plt.plot(all_tree_count, diff_presentage_list, 'o:')
 
+# 畫 stable threhold
+plt.plot([bound_n_estimators[0], 1100], [stable_threshold, stable_threshold], '-')
 
+for a, b in zip(all_tree_count, diff_presentage_list):
+    plt.text(a, b, str(a), ha='left', va='top')
+
+plt.xlabel('tree count')
+plt.ylabel('max/(max-min)  (%)')
 #%% 
+# 畫BO找到的數值，隨著iteration的變化
 
 fig_width = 20
 
 #
-# stable n_estimators
+# stable tree count
 #
 plt.figure(figsize=(fig_width,5))
 plt.grid(True)
 
-plt.plot(range(iteration_count), stable_n_estimators, 'o:')
+plt.plot(range(iteration_count), stable_tree_count, 'o:')
 plt.xlabel('iteration', fontsize=30)
 plt.ylabel('tree count', fontsize=30)
 
@@ -823,42 +741,22 @@ plt.xlabel('iteration', fontsize=30)
 plt.ylabel('stable percentage', fontsize=30)
 
 #
-# max smaples
+# smaples
 #
 plt.figure(figsize=(fig_width,5))
 plt.grid(True)
-plt.plot(range(iteration_count), max_samples_list, 'o:')
+plt.plot(range(iteration_count), samples_list, 'o:')
 plt.xlabel('iteration', fontsize=30)
 plt.ylabel('samples', fontsize=30)
 
 #
-# max features
+# features
 #
 plt.figure(figsize=(fig_width,5))
 plt.grid(True)
-plt.plot(range(iteration_count), max_features_list, 'o:')
+plt.plot(range(iteration_count), features_list, 'o:')
 plt.xlabel('iteration', fontsize=30)
-plt.ylabel('features', fontsize=30)
-    
-#%%
-plt.figure(figsize=(20,17))
-plt.grid(True)
-plt.plot(all_n_estimators, diff_presentage_list, 'o:')
-# stable threhold
-plt.plot([bound_n_estimators[0], 64000], [0.01, 0.01], '-')
-
-for a, b in zip(all_n_estimators, diff_presentage_list):
-    plt.text(a, b, str(a), ha='left', va='top')
-
-plt.xlabel('n_estimators')
-plt.ylabel('max/(max-min)  (%)')
-
-
-#%%
-# plt.plot(result['n_estimators'], result['diff_presentage'], 'o:')
-# plt.plot([20, 1420], [0.1, 0.1], '-')
-# plt.xlabel('n_estimators')
-# plt.ylabel('max/(max-min)  (%)')
+plt.ylabel('features', fontsize=30)   
 
 
 #%% Grid search
@@ -870,7 +768,7 @@ if grid_search:
     time_start = time.time() #開始計時
     bound_n_estimators = range(100, 3000, 100)
     for n_estimators in bound_n_estimators:
-        score_min, score_max, diff_presentage = stable_n_estimator_unknown_func(
+        score_min, score_max, diff_presentage = stable_tree_count_func(
             30, n_estimators, opt_max_samples, opt_max_features)
         
         time_end = time.time()    #結束計時
@@ -887,19 +785,7 @@ if grid_search:
     print(result.describe())
 
 
-#%%
-#
-# IF COUNT 實驗
-#
-# opt_params_list = []
-# initial_design_numdata = 5
-# experiment_count = 0
-# if experiment_count > 0:
-#     bo_ex_labels = ['1 Isolation Forest', '3 Isolation Forest', '10 Isolation Forest', '20 Isolation Forest']
-#     opt_params_list.append(BO_EX(experiment_count,  score_difference_unknown_func, initial_design_numdata))
-    # opt_params_list.append(BO_EX(experiment_count,  IF_3, initial_design_numdata))
-    # opt_params_list.append(BO_EX(experiment_count, IF_10, initial_design_numdata))
-    # opt_params_list.append(BO_EX(experiment_count, IF_20, initial_design_numdata))
+
 
 #%%
 #
@@ -912,28 +798,6 @@ if grid_search:
 #     opt_params_list.append(BO_EX(experiment_count,  IF_3, 5))
 #     opt_params_list.append(BO_EX(experiment_count,  IF_3, 10))
 #     opt_params_list.append(BO_EX(experiment_count,  IF_3, 15))
-
-#%%
-print('GPyOpt Result...')
-
-bo_ex_labels = ['1 Isolation Forest', '3 Isolation Forest', '10 Isolation Forest', '20 Isolation Forest']
-opt_params_col = opt_params_list[0].columns
-for j in range(len(opt_params_col)):
-    for i in range(len(opt_params_list)):
-        plt.grid(True)
-        plt.hist(opt_params_list[i][opt_params_col[j]], bins=range(0, 130), density=True, alpha=0.3, 
-                 rwidth=1, label=bo_ex_labels[i])
-        
-        plt.legend(loc='upper right')
-        plt.xlabel(opt_params_col[j])
-        plt.ylabel("Probability")
-        title = ""
-        plt.title(title)
-        plt.show()
-    
-for i in range(len(opt_params_list)):
-    print(opt_params_list[i].describe())
-
 
 #%%
 '''
