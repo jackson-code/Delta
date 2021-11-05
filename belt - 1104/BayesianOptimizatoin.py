@@ -32,7 +32,7 @@ def init_samples(init_count, bound, bound_domain, unknown_func, train_data, test
 m52 = ConstantKernel(1.0) * Matern(length_scale=1.0, nu=2.5)
 gpr = GaussianProcessRegressor(kernel=m52)
 
-def run_native(n_iter, X_sample ,Y_sample, bound, bound_domain, train_data, test_data, test_label_bi):
+def run_native(n_iter, acq_type, X_sample ,Y_sample, bound, bound_domain, train_data, test_data, test_label_bi):
 
     for i in range(n_iter):
         # Update Gaussian process with existing samples
@@ -40,7 +40,7 @@ def run_native(n_iter, X_sample ,Y_sample, bound, bound_domain, train_data, test
     
         # Obtain next sampling point from the acquisition function (expected_improvement)
         # X_next: dim * 1
-        X_next = acq_func.argmax('EI', X_sample, Y_sample, gpr, bound, bound_domain)
+        X_next = acq_func.argmax(acq_type, X_sample, Y_sample, gpr, bound, bound_domain)
         print(X_next)
         
         # 得到的argmax(acq)會是continous，必須把discrete type的數值取floor 

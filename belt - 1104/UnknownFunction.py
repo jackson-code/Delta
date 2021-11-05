@@ -6,6 +6,7 @@ Created on Fri Nov  5 17:03:50 2021
 """
 from sklearn.ensemble import IsolationForest
 import pandas as pd
+import statistics
 
 
 def score_difference(parameters, train_data, test_data, test_bi_label):
@@ -28,8 +29,6 @@ def score_difference(parameters, train_data, test_data, test_bi_label):
         max_normal_score = df[df['y_test']==1].max(axis=0)
         min_anomaly_score = df[df['y_test']==-1].min(axis=0)
         diff_list.append(min_anomaly_score['Anomaly_score'] - max_normal_score['Anomaly_score'])
-    diff_min = min(diff_list)
-    # diff_max = max(diff_list)
-    #print(diff_min)
+    diff_mean = statistics.mean(diff_list)
     
-    return -diff_min
+    return -diff_mean

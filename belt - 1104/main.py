@@ -255,7 +255,7 @@ print('Train & Test data...')
 Xy_train, Xy_test, y_train, y_test = train_test_split(Xy_selected, y, test_size=0.3, random_state=0,stratify=y)
 # 排序是為了後面的異常分數圖
 Xy_test = Xy_test.sort_values(by=['Span'])
-X_test = Xy_test.drop(columns = 'Span')
+test_data = Xy_test.drop(columns = 'Span')
 y_test = y_test.sort_values(ascending=True)
 
 
@@ -304,7 +304,7 @@ if add_fake_abnormal_X == True:
     
 # shuffle
 #Xy_train = Xy_train.sample(frac=1)
-X_train = Xy_train.drop(columns='Span')
+train_data = Xy_train.drop(columns='Span')
 y_train = Xy_train.Span
 
 
@@ -313,7 +313,7 @@ y_train = Xy_train.Span
 C++
 '''
 print('data to C++...')
-dataToC.DataToC(X_train, Xy_test)
+dataToC.DataToC(train_data, Xy_test)
 
 # print('data from C++...')
 # anomaly_score_from_C = dataFromC.DataFromC()
@@ -326,13 +326,13 @@ dataToC.DataToC(X_train, Xy_test)
 Isolation Forest
 '''
 print('Isolation Forest...')
-IF = myIsolationForest.IF(abnormal_ratio, n_estimators=500, max_samples=20, max_features=5, X_train=X_train)
+IF = myIsolationForest.IF(abnormal_ratio, n_estimators=500, max_samples=20, max_features=5, X_train=train_data)
 
 # label: 正常=1，異常=-1
-y_test_bi = y_test.replace(to_replace = y_test[ y_test <= 1 ].tolist(), value=1 )
-y_test_bi = y_test_bi.replace(to_replace = y_test[ y_test > 1 ].tolist(), value=-1 )
+test_bi_label = y_test.replace(to_replace = y_test[ y_test <= 1 ].tolist(), value=1 )
+test_bi_label = test_bi_label.replace(to_replace = y_test[ y_test > 1 ].tolist(), value=-1 )
 
-IF.Predict(X_test, y_test_bi, y_test, labels)
+IF.Predict(test_data, test_bi_label, y_test, labels)
 IF.PlotAnomalyScore('')
 
 print('\t binary classification')
@@ -450,12 +450,12 @@ def score_difference_func(parameters):
                             n_estimators=int(parameters[1]),
                             max_samples=int(parameters[2]), 
                             max_features=int(parameters[3]))   
-        clf.fit(X_train)
+        clf.fit(train_data)
         
         # anomaly score
-        score = clf.score_samples(X_test)        
-        d = {'Anomaly_score' : pd.Series(score * -1, index=X_test.index),
-             'y_test' : y_test_bi}
+        score = clf.score_samples(test_data)        
+        d = {'Anomaly_score' : pd.Series(score * -1, index=test_data.index),
+             'y_test' : test_bi_label}
         df = pd.DataFrame(d)
         
         max_normal_score = df[df['y_test']==1].max(axis=0)
@@ -499,7 +499,7 @@ bound_1 = [
     
     {'name': 'max_samples',
      'type': 'discrete',
-     'domain': range(2, X_test.shape[0])},
+     'domain': range(2, test_data.shape[0])},
 
     {'name': 'max_features',
      'type': 'discrete',
@@ -597,8 +597,8 @@ for j in range(len(samples)):
     # 重複建IF
     for i in range(experiment_count):
         print(i)
-        temp_if = myIsolationForest.IF(abnormal_ratio, n_estimators=200, max_samples=samples[j], max_features=3, X_train=X_train)
-        temp_if.Predict(X_test, y_test_bi, y_test, labels)        
+        temp_if = myIsolationForest.IF(abnormal_ratio, n_estimators=200, max_samples=samples[j], max_features=3, X_train=train_data)
+        temp_if.Predict(test_data, test_bi_label, y_test, labels)        
         # score difference取到小數點後3位
         score_differences[i] = round(temp_if.ScoreDifference(), 3)
         
@@ -656,7 +656,7 @@ for i in range(iteration_count):
         
         {'name': 'max_samples',
          'type': 'discrete',
-         'domain': range(2, X_test.shape[0])},
+         'domain': range(2, test_data.shape[0])},
     
         {'name': 'max_features',
          'type': 'discrete',
@@ -761,7 +761,6 @@ plt.ylabel('features', fontsize=30)
 
 
 #%%
-
 bound = [ 
     {'name': 'abnormal_ratio',
       'type': 'fixed',
@@ -769,15 +768,15 @@ bound = [
         
     {'name': 'IF_count',
       'type': 'discrete',
-      'domain': range(1, 2)}, # 設定range(想要的IF_count, IF_count+1)
+      'domain': range(2, 2+1)}, # 設定range(想要的IF_count, IF_count+1)
     
     {'name': 'n_estimators',
       'type': 'discrete',
-      'domain': range(200, 201)},
+      'domain': range(30, 31)},
     
     {'name': 'max_samples',
      'type': 'discrete',
-     'domain': range(2, X_test.shape[0])},
+     'domain': range(2, test_data.shape[0]-100)},
 
     {'name': 'max_features',
      'type': 'discrete',
@@ -792,19 +791,120 @@ for i in range(len(bound)):
         bound_domain[i] = [ bound[i]['domain'].start, bound[i]['domain'].stop ]
 
 #%%
-# 實驗參數:
-
 import UnknownFunction
 import BayesianOptimizatoin as BO
 
 # Initialize samples
-init_count = 5
+init_count = 2
 X_sample ,Y_sample = BO.init_samples(init_count, bound, bound_domain,
-                                  UnknownFunction.score_difference, X_train, X_test, y_test_bi)
+                                  UnknownFunction.score_difference, train_data, test_data, test_bi_label)
 
 # Number of iterations
 n_iter = 10
-BO.run_native(n_iter, X_sample ,Y_sample, bound, bound_domain, X_train, X_test, y_test_bi)
+BO.run_native(n_iter, 'LCB', X_sample ,Y_sample, bound, bound_domain, train_data, test_data, test_bi_label)
+
+
+#%% 重複BO，看BO找到的samples分布
+# 實驗參數
+exp_count = 300
+n_iter = 15
+init_count = 5
+
+opt_params = pd.DataFrame(columns=['score difference', 'tree_count', 'samples', 'features', 'time_cost'])
+for i in range(exp_count):
+    print('\n\t BO ex', i)
+    time_start = time.time() #開始計時
+    
+    X_sample ,Y_sample = BO.init_samples(init_count, bound, bound_domain,
+                                  UnknownFunction.score_difference, train_data, test_data, test_bi_label)
+    opt_score_diff, opt_param = BO.run_native(n_iter, 'LCB', X_sample ,Y_sample, 
+                                              bound, bound_domain, 
+                                              train_data, test_data, test_bi_label)     
+    time_end = time.time()    #結束計時
+    time_cost= time_end - time_start   #執行所花時間
+    print('\t', 'time cost', time_cost, 's')
+    
+    # 所有實驗的參數結果
+    opt_params = opt_params.append({
+        'score difference': opt_score_diff,
+        'tree_count': opt_param[2], 
+        'samples': opt_param[3], 
+        'features': opt_param[4],
+        'time_cost': time_cost}, ignore_index=True)
+print(opt_params.describe())
+# 存實驗結果
+# opt_params.to_pickle('pickle/1000_BO_500TreeCount')
+
+#%%
+if exp_count > 0:    
+    #
+    # ----- 畫samples分布 ------
+    #
+    
+    # (1)計算每種max_samples出現的頻率
+    samples_freq = opt_params.groupby(opt_params['samples'].values).size()
+
+    count = 0
+    # (2)find 95% confidence interval
+    lower_bound = 0
+    upper_bound = 0
+    find_lower = False
+    find_upper = False
+    
+    for f in samples_freq.index:
+        count += samples_freq[f]    
+        # 找95%信賴區間的下界
+        if count >= (len(opt_params) * 0.025):
+            if find_lower == False:
+                find_lower = True
+                lower_bound = f
+                print(f, samples_freq[f])
+        # 找95%信賴區間的上界
+        if count >= (len(opt_params) * 0.975):
+            if find_upper == False:
+                find_upper = True
+                upper_bound = f
+                print(f, samples_freq[f])
+
+    # (3) plot
+    plt.figure(figsize=(20,5))
+    plt.grid(True)
+    
+    # plot 95% confidence interval
+    plt.plot([lower_bound, lower_bound], [0, samples_freq.max()],  ':', color='r', label='95% confidence interval')
+    plt.text(lower_bound, samples_freq.max(), 'samples=' + str(lower_bound), ha='center', va='top')
+    plt.plot([upper_bound, upper_bound], [0, samples_freq.max()],  ':', color='r')
+    plt.text(upper_bound, samples_freq.max(), 'samples=' + str(upper_bound), ha='center', va='top')
+    
+    # 畫 samples 分布
+    plt.plot(samples_freq, 'o')
+    # 標記每個點的y值
+    for a, b in zip(samples_freq.index, samples_freq.values):
+        plt.text(a, b, str(b), ha='left', va='top')
+    
+    plt.xticks(range(int(samples_freq.first_valid_index()-2), int(samples_freq.last_valid_index()), 10))
+    plt.xlabel('samples')
+    plt.ylabel('frequency')
+    plt.title('samples distribution of 1000 times Bayesian Optimization')
+    plt.legend()
+
+    #
+    # ----- 畫features分布 ------
+    #
+    plt.figure(figsize=(7,5))
+    plt.grid(True)
+    
+    features_freq = opt_params.groupby(opt_params['features'].values).size() 
+    plt.plot(features_freq, 'o')
+    
+    for a, b in zip(features_freq.index, features_freq.values):
+        plt.text(a, b, str(b), ha='left', va='top')
+    
+    plt.xlabel('features')
+    plt.ylabel('frequency')
+    plt.title('features distribution of 1000 times Bayesian Optimization')
+
+
 #%% Grid search
 
 result = pd.DataFrame(columns=['n_estimators', 'max_samples', 'max_features', 
@@ -831,29 +931,15 @@ if grid_search:
     print(result.describe())
 
 
-
-
-#%%
-#
-# initial_design_numdata 實驗
-#
-# opt_params_list = []
-# experiment_count = 0
-# if experiment_count > 0:
-#     bo_ex_labels = ['5 initial samples', '10 initial samples', '15 initial samples']
-#     opt_params_list.append(BO_EX(experiment_count,  IF_3, 5))
-#     opt_params_list.append(BO_EX(experiment_count,  IF_3, 10))
-#     opt_params_list.append(BO_EX(experiment_count,  IF_3, 15))
-
 #%%
 '''
 Bayesian Optimization Isolation Forest (libaray: GPyOpt)
 '''
 print('Bayesian Optimization Forest...')
-# BO_IF = myIsolationForest.IF(abnormal_ratio, n_estimators=50, max_samples=100, max_features=5, X_train=X_train)
+# BO_IF = myIsolationForest.IF(abnormal_ratio, n_estimators=50, max_samples=100, max_features=5, X_train=train_data)
 BO_IF = myIsolationForest.IF(abnormal_ratio, n_estimators=200, max_samples=75, 
-                             max_features=3, X_train=X_train, random_state=None)
-BO_IF.Predict(X_test, y_test_bi, y_test, labels)
+                             max_features=3, X_train=train_data, random_state=None)
+BO_IF.Predict(test_data, test_bi_label, y_test, labels)
 # BO_IF.PlotAnomalyScore('BO')
 
 print('\t binary classification')
