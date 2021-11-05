@@ -762,37 +762,10 @@ plt.ylabel('features', fontsize=30)
 
 #%%
 
-def score_difference_func(parameters, X_train, X_test, y_test_bi):
-    IF_count = int(parameters[0])
-    diff_list = []
-    for i in range(IF_count):
-        clf = IsolationForest(contamination=abnormal_ratio, 
-                            random_state=None,
-                            n_estimators=int(parameters[1]),
-                            max_samples=int(parameters[2]), 
-                            max_features=int(parameters[3]))   
-        clf.fit(X_train)
-        
-        # anomaly score
-        score = clf.score_samples(X_test)        
-        d = {'Anomaly_score' : pd.Series(score * -1, index=X_test.index),
-             'y_test' : y_test_bi}
-        df = pd.DataFrame(d)
-        
-        max_normal_score = df[df['y_test']==1].max(axis=0)
-        min_anomaly_score = df[df['y_test']==-1].min(axis=0)
-        diff_list.append(min_anomaly_score['Anomaly_score'] - max_normal_score['Anomaly_score'])
-    diff_min = min(diff_list)
-    # diff_max = max(diff_list)
-    #print(diff_min)
-    
-    return -diff_min
-
-
 bound = [ 
-    # {'name': 'abnormal_ratio',
-    #   'type': 'continous',
-    #   'domain': range(0, 1)}, 
+    {'name': 'abnormal_ratio',
+      'type': 'fixed',
+      'domain': abnormal_ratio}, 
         
     {'name': 'IF_count',
       'type': 'discrete',
@@ -813,45 +786,25 @@ bound = [
 
 bound_domain = np.zeros((len(bound), 2))
 for i in range(len(bound)):
-    bound_domain[i] = [ bound[i]['domain'].start, bound[i]['domain'].stop ]
+    if bound[i]['type'] == 'fixed':
+        bound_domain[i] = [ bound[i]['domain'], bound[i]['domain']]
+    else:
+        bound_domain[i] = [ bound[i]['domain'].start, bound[i]['domain'].stop ]
 
 #%%
 # 實驗參數:
-init_count = 5
 
-def init_samples(init_count, bound, unknown_func, X_train, X_test, y_test_bi):
-    # 初始化X
-    X_init = np.zeros((init_count, len(bound)))
-    for i in range(len(bound)):
-        if bound[i]['type'] == 'continous':
-            X_init[:, i] = np.random.uniform(bound_domain[i][0], bound_domain[i][1], init_count)
-        else:
-            X_init[:, i] = np.random.randint(bound_domain[i][0], bound_domain[i][1], init_count)
-    
-    # 初始化Y
-    Y_init = np.zeros((init_count, 1))
-    for i in range(init_count):
-        Y_init[i] = unknown_func(X_init[i], X_train, X_test, y_test_bi)
-        
-    return X_init, Y_init
-#%%
-
-
+import UnknownFunction
+import BayesianOptimizatoin as BO
 
 # Initialize samples
-X_sample ,Y_sample = init_samples(init_count, bound, 
-                                  score_difference_func, X_train, X_test, y_test_bi)
-
-
-#%%
+init_count = 5
+X_sample ,Y_sample = BO.init_samples(init_count, bound, bound_domain,
+                                  UnknownFunction.score_difference, X_train, X_test, y_test_bi)
 
 # Number of iterations
 n_iter = 10
-
-
-
-
-BO_run(n_iter, X_sample ,Y_sample, X_train, X_test, y_test_bi)
+BO.run_native(n_iter, X_sample ,Y_sample, bound, bound_domain, X_train, X_test, y_test_bi)
 #%% Grid search
 
 result = pd.DataFrame(columns=['n_estimators', 'max_samples', 'max_features', 
