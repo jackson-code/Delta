@@ -41,7 +41,6 @@ def run_native(n_iter, acq_type, X_sample ,Y_sample, bound, bound_domain, train_
         # Obtain next sampling point from the acquisition function (expected_improvement)
         # X_next: dim * 1
         X_next = acq_func.argmax(acq_type, X_sample, Y_sample, gpr, bound, bound_domain)
-        print(X_next)
         
         # 得到的argmax(acq)會是continous，必須把discrete type的數值取floor 
         # for j in range(len(bound)):

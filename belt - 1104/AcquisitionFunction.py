@@ -94,7 +94,7 @@ def argmax(acq_type, X_sample, Y_sample, gp, bound, bound_domain, n_restarts=25)
     
     # Find the best optimum by starting from n_restart different random points.
     # 當min_val=1時，表示困在local，重新執行
-    while min_val == 1:
+    while min_x is None:
         # 初始化X
         X0 = np.zeros((n_restarts, dim))
         for i in range(dim):
@@ -104,7 +104,13 @@ def argmax(acq_type, X_sample, Y_sample, gp, bound, bound_domain, n_restarts=25)
                 X0[:, i] = np.random.randint(bound_domain[i][0], bound_domain[i][1], n_restarts)
         
         for x0 in X0:
-            res = minimize(min_obj, x0=x0, bounds=bound_domain, method='L-BFGS-B')        
+            res = minimize(min_obj, x0=x0, bounds=bound_domain, method='L-BFGS-B')  
+            
+            # See if success
+            # if not res.success:
+            #     print('minimize fail reason:', res.message)
+            #     continue
+        
             if res.fun < min_val:
                 min_val = res.fun[0]
                 min_x = res.x           

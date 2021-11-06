@@ -32,3 +32,19 @@ def score_difference(parameters, train_data, test_data, test_bi_label):
     diff_mean = statistics.mean(diff_list)
     
     return -diff_mean
+
+
+def stable_tree_count(abnoraml_ratio, IF_count, tree_count, samples, features, train_data, test_data, test_bi_label):
+    print('tree_count = ', tree_count)
+        
+    # 建立多個IF，計算多個score difference
+    score_diff_list = []
+    for i in range(IF_count):
+        params = [[1, tree_count, samples, features]]
+        score_diff_list.append(score_difference(params, train_data, test_data, test_bi_label))
+
+    # 計算最好、最差的score differenc之間的落差
+    score_min = -max(score_diff_list)
+    score_max = -min(score_diff_list)
+    diff_presentage = (score_max - score_min) / score_max
+    return score_min, score_max, diff_presentage

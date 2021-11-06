@@ -434,333 +434,17 @@ def BO_EX(experiment_count, unknown_func, initial_design_numdata, bound):
     return opt_params
 
 
-#%%
-#
-# unknown function
-#
-
-# Optimizer will try to find minimum, so we will add a "-" sign.
-def score_difference_func(parameters):
-    parameters = parameters[0]
-    IF_count = int(parameters[0])
-    diff_list = []
-    for i in range(IF_count):
-        clf = IsolationForest(contamination=abnormal_ratio, 
-                            random_state=None,
-                            n_estimators=int(parameters[1]),
-                            max_samples=int(parameters[2]), 
-                            max_features=int(parameters[3]))   
-        clf.fit(train_data)
-        
-        # anomaly score
-        score = clf.score_samples(test_data)        
-        d = {'Anomaly_score' : pd.Series(score * -1, index=test_data.index),
-             'y_test' : test_bi_label}
-        df = pd.DataFrame(d)
-        
-        max_normal_score = df[df['y_test']==1].max(axis=0)
-        min_anomaly_score = df[df['y_test']==-1].min(axis=0)
-        diff_list.append(min_anomaly_score['Anomaly_score'] - max_normal_score['Anomaly_score'])
-    diff_min = min(diff_list)
-    # diff_max = max(diff_list)
-    #print(diff_min)
-    
-    return -diff_min
-
-
-def stable_tree_count_func(IF_count, n_estimators, max_samples, max_features):
-    print('n_estimators = ', n_estimators)
-        
-    # 建立多個IF，計算多個score difference
-    score_diff_list = []
-    for i in range(IF_count):
-        params = [[1, n_estimators, max_samples, max_features]]
-        score_diff_list.append(score_difference_func(params))
-
-    # 計算最好、最差的score differenc之間的落差
-    score_min = -max(score_diff_list)
-    score_max = -min(score_diff_list)
-    diff_presentage = (score_max - score_min) / score_max
-    return score_min, score_max, diff_presentage
-
-
-#%% 重複BO，看BO找到的samples分布
-
-bound_n_estimators = [1, 200]
-# Bounds (NOTE: define continuous variables first, then discrete!)
-bound_1 = [   
-    {'name': 'IF_count',
-      'type': 'discrete',
-      'domain': range(1, 2)}, # 設定range(想要的IF_count, IF_count+1)
-    
-    {'name': 'n_estimators',
-      'type': 'discrete',
-      'domain': range(bound_n_estimators[1], bound_n_estimators[1]+1)},
-    
-    {'name': 'max_samples',
-     'type': 'discrete',
-     'domain': range(2, test_data.shape[0])},
-
-    {'name': 'max_features',
-     'type': 'discrete',
-     'domain': range(3, 6)}
-]
-
-opt_params = pd.DataFrame()
-experiment_count = 0
-if experiment_count > 0:
-    # run EX
-    opt_params = BO_EX(experiment_count,  score_difference_func, 15, bound_1)
-
-    # 存實驗結果
-    opt_params.to_pickle('pickle/1000_BO_500TreeCount')
-
-#%%
-if experiment_count > 0:    
-    #
-    # ----- 畫samples分布 ------
-    #
-    
-    # (1)計算每種max_samples出現的頻率
-    samples_freq = opt_params.groupby(opt_params['max_samples'].values).size()
-
-    count = 0
-    # (2)find 95% confidence interval
-    lower_bound = 0
-    upper_bound = 0
-    find_lower = False
-    find_upper = False
-    
-    for f in samples_freq.index:
-        count += samples_freq[f]    
-        # 找95%信賴區間的下界
-        if count >= (len(opt_params) * 0.025):
-            if find_lower == False:
-                find_lower = True
-                lower_bound = f
-                print(f, samples_freq[f])
-        # 找95%信賴區間的上界
-        if count >= (len(opt_params) * 0.975):
-            if find_upper == False:
-                find_upper = True
-                upper_bound = f
-                print(f, samples_freq[f])
-
-    # (3) plot
-    plt.figure(figsize=(20,5))
-    plt.grid(True)
-    
-    # plot 95% confidence interval
-    plt.plot([lower_bound, lower_bound], [0, samples_freq.max()],  ':', color='r', label='95% confidence interval')
-    plt.text(lower_bound, samples_freq.max(), 'samples=' + str(lower_bound), ha='center', va='top')
-    plt.plot([upper_bound, upper_bound], [0, samples_freq.max()],  ':', color='r')
-    plt.text(upper_bound, samples_freq.max(), 'samples=' + str(upper_bound), ha='center', va='top')
-    
-    # 畫 samples 分布
-    plt.plot(samples_freq, 'o')
-    # 標記每個點的y值
-    for a, b in zip(samples_freq.index, samples_freq.values):
-        plt.text(a, b, str(b), ha='left', va='top')
-    
-    plt.xticks(range(int(samples_freq.first_valid_index()-2), int(samples_freq.last_valid_index()), 10))
-    plt.xlabel('samples')
-    plt.ylabel('frequency')
-    plt.title('samples distribution of 1000 times Bayesian Optimization')
-    plt.legend()
-
-    #
-    # ----- 畫features分布 ------
-    #
-    plt.figure(figsize=(7,5))
-    plt.grid(True)
-    
-    features_freq = opt_params.groupby(opt_params['max_features'].values).size() 
-    plt.plot(features_freq, 'o')
-    
-    for a, b in zip(features_freq.index, features_freq.values):
-        plt.text(a, b, str(b), ha='left', va='top')
-    
-    plt.xlabel('features')
-    plt.ylabel('frequency')
-    plt.title('features distribution of 1000 times Bayesian Optimization')
-    plt.legend()
-
-#%% 觀察相同的samples之下，建出來的IF的score difference分布
-experiment_count = 0
-samples = [50, 100, 140]
-
-# run ex
-for j in range(len(samples)):
-    score_differences = pd.Series([])
-    if experiment_count <= 0:
-        break;
-    # 重複建IF
-    for i in range(experiment_count):
-        print(i)
-        temp_if = myIsolationForest.IF(abnormal_ratio, n_estimators=200, max_samples=samples[j], max_features=3, X_train=train_data)
-        temp_if.Predict(test_data, test_bi_label, y_test, labels)        
-        # score difference取到小數點後3位
-        score_differences[i] = round(temp_if.ScoreDifference(), 3)
-        
-    # 計算每種score difference出現的次數   
-    sd_freq = score_differences.value_counts()
-
-    #
-    # 畫score differnce 分布
-    #
-    plt.figure(figsize=(20,5))
-    plt.grid(True)
-     
-    plt.plot(sd_freq.index, sd_freq, 'o')
-    
-    # 標每個點的y值
-    for a, b in zip(sd_freq.index, sd_freq):
-        plt.text(a, b, str(b), ha='left', va='top')
-    
-    plt.xlabel('score difference')
-    plt.ylabel('frequency')
-    plt.title('samplels =' + str(samples[j]))
-
-#%%
-#
-# n_estimators 穩定度 實驗
-#
-
-# 初始設一個極大的tree count(保證穩定)，然後用BO找到feature, samples
-stable_tree_count = [200]
-# 設定穩定度，會找到此穩定度對應的tree count
-stable_threshold = 0.5
-
-samples_list = []
-features_list = []
-stable_diff_presentage_list = []
-all_tree_count = []
-
-# 迭代
-iteration_count = 0
-for i in range(iteration_count):
-    print('Iteration', i)
-    #
-    # ----- Step 1: 固定tree count，找samples、feature -----
-    #
-    
-    # Bounds (NOTE: define continuous variables first, then discrete!)
-    bound_1 = [   
-        {'name': 'IF_count',
-          'type': 'discrete',
-          'domain': range(1, 2)}, # 設定range(想要的IF_count, IF_count+1)
-        
-        {'name': 'n_estimators',
-          'type': 'discrete',
-          'domain': range(stable_tree_count[i], stable_tree_count[i]+1)},
-        
-        {'name': 'max_samples',
-         'type': 'discrete',
-         'domain': range(2, test_data.shape[0])},
-    
-        {'name': 'max_features',
-         'type': 'discrete',
-         'domain': range(3, 6)}
-    ]
-    
-    
-    experiment_count = 1
-    if experiment_count > 0:
-        print('Step 1')
-        print('stable_tree_count = ', stable_tree_count[i])
-        opt_params = BO_EX(experiment_count,  score_difference_func, 15, bound_1)
-    
-    # 第一階段找到的最佳samples, features
-    # 代入第二階段
-    print('opt_samples =', opt_params.max_samples)
-    print('opt_features =', opt_params.max_features)
-    samples_list.append(int(opt_params.max_samples))
-    features_list.append(int(opt_params.max_features))   
-
-
-    #
-    # ----- Step 2: 固定max_samples、max_feature，找n_estimators -----
-    #
-
-    experiment_count = 1
-    if experiment_count > 0:
-        print('Step 2')
-        time_start = time.time() #開始計時
-        diff_presentage_list, all_tree_count, stable_n_estimator, stable_diff_presentage = TreeCountSearch.binary_search_dynamic_high(low=bound_n_estimators[0], 
-                                                        high=100, 
-                                                        stop_interval=50, threshold=stable_threshold,
-                                                        max_samples=opt_params.max_samples, 
-                                                        max_features=opt_params.max_features,
-                                                        stable_tree_count_func=stable_tree_count_func)
-        time_end = time.time()    #結束計時
-        time_c= time_end - time_start   #執行所花時間
-        print('minimum stable n_estimator =', stable_n_estimator)
-        stable_tree_count.append(stable_n_estimator)
-        print('stable_diff_presentage =', stable_diff_presentage)
-        stable_diff_presentage_list.append(stable_diff_presentage)
-        
-# 刪除初始設定的很大的 tree count，方便後面作圖
-del(stable_tree_count[0])
-#%%
-if iteration_count > 0:
-    # 畫binary search的過程
-    plt.figure(figsize=(20,17))
-    plt.grid(True)
-    plt.plot(all_tree_count, diff_presentage_list, 'o:')
-    
-    # 畫 stable threhold
-    plt.plot([bound_n_estimators[0], 1100], [stable_threshold, stable_threshold], '-')
-    
-    for a, b in zip(all_tree_count, diff_presentage_list):
-        plt.text(a, b, str(a), ha='left', va='top')
-    
-    plt.xlabel('tree count')
-    plt.ylabel('max/(max-min)  (%)')
 #%% 
-# 畫BO找到的數值，隨著iteration的變化
+import UnknownFunction
+import BayesianOptimizatoin as BO
+import BayesianOptimizatoinPlot as BOPlot
 
-fig_width = 20
+## 實驗: BO找到的最佳參數分布，是否收斂
 
-#
-# stable tree count
-#
-plt.figure(figsize=(fig_width,5))
-plt.grid(True)
-
-plt.plot(range(iteration_count), stable_tree_count, 'o:')
-plt.xlabel('iteration', fontsize=30)
-plt.ylabel('tree count', fontsize=30)
-
-
-#
-# stable_diff_presentage
-#
-plt.figure(figsize=(fig_width,5))
-plt.grid(True)
-plt.plot(range(iteration_count), stable_diff_presentage_list, 'o:')
-plt.xlabel('iteration', fontsize=30)
-plt.ylabel('stable percentage', fontsize=30)
-
-#
-# smaples
-#
-plt.figure(figsize=(fig_width,5))
-plt.grid(True)
-plt.plot(range(iteration_count), samples_list, 'o:')
-plt.xlabel('iteration', fontsize=30)
-plt.ylabel('samples', fontsize=30)
-
-#
-# features
-#
-plt.figure(figsize=(fig_width,5))
-plt.grid(True)
-plt.plot(range(iteration_count), features_list, 'o:')
-plt.xlabel('iteration', fontsize=30)
-plt.ylabel('features', fontsize=30)   
-
-
-#%%
+# 實驗參數
+exp_count = 0
+n_iter = 25
+init_count = 15
 bound = [ 
     {'name': 'abnormal_ratio',
       'type': 'fixed',
@@ -768,19 +452,19 @@ bound = [
         
     {'name': 'IF_count',
       'type': 'discrete',
-      'domain': range(2, 2+1)}, # 設定range(想要的IF_count, IF_count+1)
+      'domain': range(1, 2)}, # 設定range(想要的IF_count, IF_count+1)
     
-    {'name': 'n_estimators',
+    {'name': 'tree_count',
       'type': 'discrete',
-      'domain': range(30, 31)},
+      'domain': range(200, 201)},
     
-    {'name': 'max_samples',
+    {'name': 'samples',
      'type': 'discrete',
      'domain': range(2, test_data.shape[0]-100)},
 
-    {'name': 'max_features',
+    {'name': 'features',
      'type': 'discrete',
-     'domain': range(3, 6)}
+     'domain': range(3, 4)}
 ]
 
 bound_domain = np.zeros((len(bound), 2))
@@ -789,27 +473,8 @@ for i in range(len(bound)):
         bound_domain[i] = [ bound[i]['domain'], bound[i]['domain']]
     else:
         bound_domain[i] = [ bound[i]['domain'].start, bound[i]['domain'].stop ]
-
-#%%
-import UnknownFunction
-import BayesianOptimizatoin as BO
-
-# Initialize samples
-init_count = 2
-X_sample ,Y_sample = BO.init_samples(init_count, bound, bound_domain,
-                                  UnknownFunction.score_difference, train_data, test_data, test_bi_label)
-
-# Number of iterations
-n_iter = 10
-BO.run_native(n_iter, 'LCB', X_sample ,Y_sample, bound, bound_domain, train_data, test_data, test_bi_label)
-
-
-#%% 重複BO，看BO找到的samples分布
-# 實驗參數
-exp_count = 300
-n_iter = 15
-init_count = 5
-
+        
+# run BO
 opt_params = pd.DataFrame(columns=['score difference', 'tree_count', 'samples', 'features', 'time_cost'])
 for i in range(exp_count):
     print('\n\t BO ex', i)
@@ -832,79 +497,189 @@ for i in range(exp_count):
         'features': opt_param[4],
         'time_cost': time_cost}, ignore_index=True)
 print(opt_params.describe())
+
 # 存實驗結果
 # opt_params.to_pickle('pickle/1000_BO_500TreeCount')
 
-#%%
-if exp_count > 0:    
-    #
-    # ----- 畫samples分布 ------
-    #
-    
-    # (1)計算每種max_samples出現的頻率
-    samples_freq = opt_params.groupby(opt_params['samples'].values).size()
+BOPlot.samples_distribution(opt_params)
+BOPlot.features_distribution(opt_params)
 
-    count = 0
-    # (2)find 95% confidence interval
-    lower_bound = 0
-    upper_bound = 0
-    find_lower = False
-    find_upper = False
-    
-    for f in samples_freq.index:
-        count += samples_freq[f]    
-        # 找95%信賴區間的下界
-        if count >= (len(opt_params) * 0.025):
-            if find_lower == False:
-                find_lower = True
-                lower_bound = f
-                print(f, samples_freq[f])
-        # 找95%信賴區間的上界
-        if count >= (len(opt_params) * 0.975):
-            if find_upper == False:
-                find_upper = True
-                upper_bound = f
-                print(f, samples_freq[f])
+#%% 
+## 實驗: 觀察相同的samples之下，建出來的IF的score difference分布
 
-    # (3) plot
+# 實驗參數
+exp_count = 0
+samples_try = [50, 100, 140]
+
+# run ex
+for j in range(len(samples_try)):
+    score_differences = pd.Series([])
+    if exp_count <= 0:
+        break;
+    # 重複建IF
+    for i in range(exp_count):
+        print(i)
+        temp_if = myIsolationForest.IF(abnormal_ratio, n_estimators=200, max_samples=samples_try[j], max_features=3, X_train=train_data)
+        temp_if.Predict(test_data, test_bi_label, y_test, labels)        
+        # score difference取到小數點後3位
+        score_differences[i] = round(temp_if.ScoreDifference(), 3)
+        
+    # 計算每種score difference出現的次數   
+    sd_freq = score_differences.value_counts()
+
+    #
+    # 畫score differnce 分布
+    #
     plt.figure(figsize=(20,5))
     plt.grid(True)
+     
+    plt.plot(sd_freq.index, sd_freq, 'o')
     
-    # plot 95% confidence interval
-    plt.plot([lower_bound, lower_bound], [0, samples_freq.max()],  ':', color='r', label='95% confidence interval')
-    plt.text(lower_bound, samples_freq.max(), 'samples=' + str(lower_bound), ha='center', va='top')
-    plt.plot([upper_bound, upper_bound], [0, samples_freq.max()],  ':', color='r')
-    plt.text(upper_bound, samples_freq.max(), 'samples=' + str(upper_bound), ha='center', va='top')
-    
-    # 畫 samples 分布
-    plt.plot(samples_freq, 'o')
-    # 標記每個點的y值
-    for a, b in zip(samples_freq.index, samples_freq.values):
+    # 標每個點的y值
+    for a, b in zip(sd_freq.index, sd_freq):
         plt.text(a, b, str(b), ha='left', va='top')
     
-    plt.xticks(range(int(samples_freq.first_valid_index()-2), int(samples_freq.last_valid_index()), 10))
-    plt.xlabel('samples')
+    plt.xlabel('score difference')
     plt.ylabel('frequency')
-    plt.title('samples distribution of 1000 times Bayesian Optimization')
-    plt.legend()
+    plt.title('samplels =' + str(samples_try[j]))
+    
+    
+#%%
+## 實驗: stable tree count
+
+# 實驗參數
+# 初始設一個極大的tree count(保證穩定)，然後用BO找到feature, samples
+stable_tree_count = [200]
+# 設定穩定度，會找到此穩定度對應的tree count
+stable_threshold = 0.5
+
+samples_list = []
+features_list = []
+stable_score_diff_list = []
+all_tree_count = []
+
+# 迭代
+iteration_count = 3
+for i in range(iteration_count):
+    print('Iteration', i)
+    #
+    # ----- Step 1: 固定tree count，找samples、feature -----
+    #
+    bound = [ 
+        {'name': 'abnormal_ratio',
+          'type': 'fixed',
+          'domain': abnormal_ratio}, 
+            
+        {'name': 'IF_count',
+          'type': 'discrete',
+          'domain': range(1, 2)}, # 設定range(想要的IF_count, IF_count+1)
+        
+        {'name': 'tree_count',
+          'type': 'discrete',
+          'domain': range(stable_tree_count[i], stable_tree_count[i]+1)},
+        
+        {'name': 'samples',
+         'type': 'discrete',
+         'domain': range(2, test_data.shape[0]-100)},
+    
+        {'name': 'features',
+         'type': 'discrete',
+         'domain': range(3, 6)}
+    ]
+    
+    print('Step 1')
+    print('stable_tree_count = ', stable_tree_count[i])
+    X_sample ,Y_sample = BO.init_samples(init_count, bound, bound_domain,
+                              UnknownFunction.score_difference, train_data, test_data, test_bi_label)
+    opt_score_diff, opt_param = BO.run_native(n_iter, 'LCB', X_sample ,Y_sample, 
+                                          bound, bound_domain, 
+                                          train_data, test_data, test_bi_label)  
+    
+    # 第一階段找到的最佳samples, features
+    # 代入第二階段
+    print('opt_samples =', opt_param[3])
+    print('opt_features =', opt_param[4])
+    samples_list.append(int(opt_param[3]))
+    features_list.append(int(opt_param[4]))   
+
 
     #
-    # ----- 畫features分布 ------
+    # ----- Step 2: 固定samples、features，找tree count -----
     #
-    plt.figure(figsize=(7,5))
+    print('Step 2')
+    
+    score_diff_list, all_tree_count, stable_tree_count, stable_score_diff = TreeCountSearch.binary_search_dynamic_high(
+        low = 2, high = 200, 
+        stop_interval = 50, threshold=stable_threshold,
+        samples = opt_param[3], 
+        features = opt_param[4],
+        stable_tree_count_func = UnknownFunction.stable_tree_count,
+        train_data = train_data, test_data = test_data, test_bi_label = test_bi_label)
+    
+    print('minimum stable tree count =', stable_tree_count)
+    stable_tree_count.append(stable_tree_count)
+    print('stable_score_diff =', stable_score_diff)
+    stable_score_diff_list.append(stable_score_diff)
+        
+# 刪除初始設定的很大的 tree count，方便後面作圖
+del(stable_tree_count[0])
+#%%
+if iteration_count > 0:
+    # 畫binary search的過程
+    plt.figure(figsize=(20,17))
     plt.grid(True)
+    plt.plot(all_tree_count, score_diff_list, 'o:')
     
-    features_freq = opt_params.groupby(opt_params['features'].values).size() 
-    plt.plot(features_freq, 'o')
+    # 畫 stable threhold
+    plt.plot([0, 1100], [stable_threshold, stable_threshold], '-')
     
-    for a, b in zip(features_freq.index, features_freq.values):
-        plt.text(a, b, str(b), ha='left', va='top')
+    for a, b in zip(all_tree_count, score_diff_list):
+        plt.text(a, b, str(a), ha='left', va='top')
     
-    plt.xlabel('features')
-    plt.ylabel('frequency')
-    plt.title('features distribution of 1000 times Bayesian Optimization')
+    plt.xlabel('tree count')
+    plt.ylabel('max/(max-min)  (%)')
+#%% 
+# 畫BO找到的數值，隨著iteration的變化
+
+fig_width = 20
+
+#
+# stable tree count
+#
+plt.figure(figsize=(fig_width,5))
+plt.grid(True)
+
+plt.plot(range(iteration_count), stable_tree_count, 'o:')
+plt.xlabel('iteration', fontsize=30)
+plt.ylabel('tree count', fontsize=30)
 
 
+#
+# stable_score_diff
+#
+plt.figure(figsize=(fig_width,5))
+plt.grid(True)
+plt.plot(range(iteration_count), stable_score_diff_list, 'o:')
+plt.xlabel('iteration', fontsize=30)
+plt.ylabel('stable percentage', fontsize=30)
+
+#
+# smaples
+#
+plt.figure(figsize=(fig_width,5))
+plt.grid(True)
+plt.plot(range(iteration_count), samples_list, 'o:')
+plt.xlabel('iteration', fontsize=30)
+plt.ylabel('samples', fontsize=30)
+
+#
+# features
+#
+plt.figure(figsize=(fig_width,5))
+plt.grid(True)
+plt.plot(range(iteration_count), features_list, 'o:')
+plt.xlabel('iteration', fontsize=30)
+plt.ylabel('features', fontsize=30)   
 #%% Grid search
 
 result = pd.DataFrame(columns=['n_estimators', 'max_samples', 'max_features', 
