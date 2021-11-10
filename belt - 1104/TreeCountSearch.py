@@ -5,14 +5,14 @@ Created on Thu Nov  4 15:39:07 2021
 @author: user
 """
 
-def binary_search_dynamic_high(low, high, stop_interval, threshold, samples, features, stable_tree_count_func, train_data, test_data, test_bi_label):
+def binary_search_dynamic_high(low, high, stop_interval, threshold, abnormal_ratio, samples, features, stable_tree_count_func, train_data, test_data, test_bi_label):
     stable_n_estimators = []
     all_n_estimators = []
     diff_presentage_list = []
     stable_diff_presentage_list = []    
     # 決定high bound
     score_min, score_max, score_diff = stable_tree_count_func(
-        30, high, samples, features, 
+        abnormal_ratio, 30, high, samples, features, 
         train_data, test_data, test_bi_label)
     
     if score_diff < (threshold*0.9):
@@ -25,7 +25,7 @@ def binary_search_dynamic_high(low, high, stop_interval, threshold, samples, fea
             low = high
             high = high * 2
             score_min, score_max, score_diff = stable_tree_count_func(
-                30, high, samples, features, 
+                abnormal_ratio, 30, high, samples, features, 
                 train_data, test_data, test_bi_label)
             
             all_n_estimators.append(high)
@@ -41,7 +41,7 @@ def binary_search_dynamic_high(low, high, stop_interval, threshold, samples, fea
         all_n_estimators.append(mid)
         
         score_min, score_max, score_diff = stable_tree_count_func(
-            30, mid, samples, features,
+            abnormal_ratio, 30, mid, samples, features,
             train_data, test_data, test_bi_label)
         diff_presentage_list.append(score_diff)
 

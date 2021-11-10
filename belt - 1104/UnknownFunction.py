@@ -40,7 +40,7 @@ def stable_tree_count(abnoraml_ratio, IF_count, tree_count, samples, features, t
     # 建立多個IF，計算多個score difference
     score_diff_list = []
     for i in range(IF_count):
-        params = [[1, tree_count, samples, features]]
+        params = [abnoraml_ratio, 1, tree_count, samples, features]
         score_diff_list.append(score_difference(params, train_data, test_data, test_bi_label))
 
     # 計算最好、最差的score differenc之間的落差

@@ -203,38 +203,38 @@ print('Feature selection...')
 #
 # train & test data for feature selection
 #
-Xy_all_feat = GetDataForFeatureSelection(X_processed)
+all_data_label = GetDataForFeatureSelection(X_processed)
 
-all_feat_X = Xy_all_feat.drop('Span', axis=1)
-y = Xy_all_feat['Span']
+all_feat_data = all_data_label.drop('Span', axis=1)
+label = all_data_label['Span']
 
-fs_train_X, fs_test_X, fs_train_y, fs_test_y = train_test_split(
-    all_feat_X, y, test_size=0.3, random_state=0,stratify=y)
+fs_train_data, fs_test_data, fs_train_label, fs_test_label = train_test_split(
+    all_feat_data, label, test_size=0.3, random_state=0,stratify=label)
 
 display_multi_labels = ['1', '2']  
 labels = [1, 2] 
 
 print('\t 1. extra tree')
-# extra_trees = FeatureSelection.ExtraTrees(150, fs_train_X, fs_train_y)
-# extra_trees.Predict(fs_test_X)
-# extra_trees.ConfusionMatrix(fs_test_y, display_multi_labels)
+# extra_trees = FeatureSelection.ExtraTrees(150, fs_train_data, fs_train_label)
+# extra_trees.Predict(fs_test_data)
+# extra_trees.ConfusionMatrix(fs_test_label, display_multi_labels)
 # extra_trees.PrintImportances()
 # extra_trees.PlotImportances()
 
 print('\t 2. random forest')
 # random_forest = FeatureSelection.RandomForest( n_estimators = 150, max_features = "sqrt", 
 #                                               max_depth = None, min_samples_leaf = 3, 
-#                                               X = fs_train_X, y = fs_train_y)
-# random_forest.Predict(fs_test_X)
-# random_forest.ConfusionMatrix(fs_test_y, display_multi_labels)
+#                                               X = fs_train_data, y = fs_train_label)
+# random_forest.Predict(fs_test_data)
+# random_forest.ConfusionMatrix(fs_test_label, display_multi_labels)
 # random_forest.PrintImportances()
 # random_forest.PlotImportances()
 
 print('\t 3. GBDT')
 # gbdt = FeatureSelection.GradientBoostedDecisionTrees(n_estimators = 100, learning_rate = 1, 
-#                                                      max_depth = 6, X = fs_train_X, y = fs_train_y)
-# gbdt.Predict(fs_test_X)
-# gbdt.ConfusionMatrix(fs_test_y, display_multi_labels)
+#                                                      max_depth = 6, X = fs_train_data, y = fs_train_label)
+# gbdt.Predict(fs_test_data)
+# gbdt.ConfusionMatrix(fs_test_label, display_multi_labels)
 # gbdt.PrintImportances()
 # gbdt.PlotImportances()
 
@@ -244,7 +244,7 @@ seleted_features = ['Span', 'Power_Factor_Angle_Avg', 'Power_Factor_Angle_Max', 
 #seleted_features = ['Power_Factor_Angle_Avg','Current_Min',]
 
 # data after feature selection
-Xy_selected = Xy_all_feat.loc[:, seleted_features]
+selected_data_label = all_data_label.loc[:, seleted_features]
 
 
 
@@ -252,11 +252,11 @@ Xy_selected = Xy_all_feat.loc[:, seleted_features]
 Train & Test data 
 '''
 print('Train & Test data...')
-Xy_train, Xy_test, y_train, y_test = train_test_split(Xy_selected, y, test_size=0.3, random_state=0,stratify=y)
+train_data_label, test_data_label, train_label, test_label = train_test_split(selected_data_label, label, test_size=0.3, random_state=0,stratify=label)
 # 排序是為了後面的異常分數圖
-Xy_test = Xy_test.sort_values(by=['Span'])
-test_data = Xy_test.drop(columns = 'Span')
-y_test = y_test.sort_values(ascending=True)
+test_data_label = test_data_label.sort_values(by=['Span'])
+test_data = test_data_label.drop(columns = 'Span')
+test_label = test_label.sort_values(ascending=True)
 
 
 
@@ -266,7 +266,7 @@ abnormal_span = [2]
 abnormal_ratio = (1.0 / 30.0) / len(abnormal_span)
 abnormal_count = 0
 for i in abnormal_span:
-    abnormal_count += math.floor(abnormal_ratio * Xy_train[Xy_train.Span == i].shape[0])
+    abnormal_count += math.floor(abnormal_ratio * train_data_label[train_data_label.Span == i].shape[0])
 
 #
 # fake data
@@ -274,38 +274,36 @@ for i in abnormal_span:
 add_fake_abnormal_X = False
 if add_fake_abnormal_X:
     print('\t produce Fake abnormal data')
-    fake_abnormal_data = ProduceFakeAbnormalData(abnormal_count, Xy_train)
+    fake_abnormal_data = ProduceFakeAbnormalData(abnormal_count, train_data_label)
 
 
 print('\t processing Train data')
 for i in range(1, Property.Experiment().SPAN_COUNT+1) :
     if (i in abnormal_span) and (add_fake_abnormal_X == False):
         print('\t add partial train real abnormal data')
-        Xy_temp = Xy_train.loc[Xy_train.Span == i, :]
+        Xy_temp = train_data_label.loc[train_data_label.Span == i, :]
         # 依異常比例取部分的 train Xy
         Xy_temp = Xy_temp.sample(frac = abnormal_ratio, axis = 0)
         
         # 移除所有的異常資料
-        idx = Xy_train.loc[Xy_train.Span == i,:].index
-        Xy_train = Xy_train.drop(idx, axis = 0)
+        idx = train_data_label.loc[train_data_label.Span == i,:].index
+        train_data_label = train_data_label.drop(idx, axis = 0)
         # 加上部分的異常資料
-        Xy_train = Xy_train.append(Xy_temp)
+        train_data_label = train_data_label.append(Xy_temp)
     # 正常資料不處理
     elif i in normal_span:
         continue
     # 移除不用的正常資料(不在normal_span的正常資料會被移除)
     else: 
-        idx = Xy_train.loc[Xy_train.Span == i,:].index
-        Xy_train = Xy_train.drop(idx, axis = 0)
+        idx = train_data_label.loc[train_data_label.Span == i,:].index
+        train_data_label = train_data_label.drop(idx, axis = 0)
         
 if add_fake_abnormal_X == True:
     print('\t add fake abnormal data')
-    Xy_train = Xy_train.append(fake_abnormal_data)
-    
-# shuffle
-#Xy_train = Xy_train.sample(frac=1)
-train_data = Xy_train.drop(columns='Span')
-y_train = Xy_train.Span
+    train_data_label = train_data_label.append(fake_abnormal_data)
+
+train_data = train_data_label.drop(columns='Span')
+train_label = train_data_label.Span
 
 
 
@@ -313,7 +311,7 @@ y_train = Xy_train.Span
 C++
 '''
 print('data to C++...')
-dataToC.DataToC(train_data, Xy_test)
+dataToC.DataToC(train_data, test_data_label)
 
 # print('data from C++...')
 # anomaly_score_from_C = dataFromC.DataFromC()
@@ -329,10 +327,10 @@ print('Isolation Forest...')
 IF = myIsolationForest.IF(abnormal_ratio, n_estimators=500, max_samples=20, max_features=5, X_train=train_data)
 
 # label: 正常=1，異常=-1
-test_bi_label = y_test.replace(to_replace = y_test[ y_test <= 1 ].tolist(), value=1 )
-test_bi_label = test_bi_label.replace(to_replace = y_test[ y_test > 1 ].tolist(), value=-1 )
+test_bi_label = test_label.replace(to_replace = test_label[ test_label <= 1 ].tolist(), value=1 )
+test_bi_label = test_bi_label.replace(to_replace = test_label[ test_label > 1 ].tolist(), value=-1 )
 
-IF.Predict(test_data, test_bi_label, y_test, labels)
+IF.Predict(test_data, test_bi_label, test_label, labels)
 IF.PlotAnomalyScore('')
 
 print('\t binary classification')
@@ -383,61 +381,13 @@ true_pred_prob_wrong = true_pred_prob[true_pred_prob['True'] != true_pred_prob['
 
 true_pred_prob_wrong.rename(columns={0: 'prob_1', 1: "prob_2", 2: "prob_3", 3: "prob_4", 4: "prob_5", 5: "prob_6",}, inplace = True)
 
-
-
-#%%
-print('GPyOpt...')
-import GPy
-import GPyOpt
-from sklearn.model_selection import cross_val_score
-from sklearn.ensemble import IsolationForest
-
-def BO_EX(experiment_count, unknown_func, initial_design_numdata, bound): 
-    opt_params = pd.DataFrame(columns=['n_estimators', 'max_samples', 'max_features', 'time_cost'])
-    max_iter = 30
-    max_time = 30
-    
-    for i in range(experiment_count):
-        print('\n\t BO ex', i)
-        time_start = time.time() #開始計時
-        
-        optimizer = GPyOpt.methods.BayesianOptimization(
-            f=unknown_func,
-            domain=bound,
-            acquisition_type ='EI',
-            acquisition_par = 0.1,
-            exact_eval=True, 
-            initial_design_numdata=initial_design_numdata)
-        
-        optimizer.run_optimization(max_iter, max_time)
-        
-        time_end = time.time()    #結束計時
-        time_c= time_end - time_start   #執行所花時間
-        print('\t', 'time cost', time_c, 's')
-        
-        # 畫收斂圖
-        # optimizer.plot_convergence()
-        
-        gp_opt = optimizer.X[np.argmin(optimizer.Y)]
-        print('\t', gp_opt)
-    
-        #optimizer.plot_acquisition()    
-    
-        # 所有實驗的參數結果
-        opt_params = opt_params.append({
-            'IF_count': gp_opt[0],
-            'n_estimators': gp_opt[1], 
-            'max_samples': gp_opt[2], 
-            'max_features': gp_opt[3],
-            'time_cost': time_c}, ignore_index=True)
-    print(opt_params.describe())
-    return opt_params
-
-
 #%% 
 import UnknownFunction
 import BayesianOptimizatoin as BO
 import BayesianOptimizatoinPlot as BOPlot
+
+# 把警告訊息關掉
+np.seterr(divide='ignore', invalid='ignore')
 
 ## 實驗: BO找到的最佳參數分布，是否收斂
 
@@ -520,7 +470,7 @@ for j in range(len(samples_try)):
     for i in range(exp_count):
         print(i)
         temp_if = myIsolationForest.IF(abnormal_ratio, n_estimators=200, max_samples=samples_try[j], max_features=3, X_train=train_data)
-        temp_if.Predict(test_data, test_bi_label, y_test, labels)        
+        temp_if.Predict(test_data, test_bi_label, test_label, labels)        
         # score difference取到小數點後3位
         score_differences[i] = round(temp_if.ScoreDifference(), 3)
         
@@ -545,11 +495,11 @@ for j in range(len(samples_try)):
     
     
 #%%
-## 實驗: stable tree count
+## 實驗: stable tree count 
 
 # 實驗參數
 # 初始設一個極大的tree count(保證穩定)，然後用BO找到feature, samples
-stable_tree_count = [200]
+stable_tree_count_list = [200]
 # 設定穩定度，會找到此穩定度對應的tree count
 stable_threshold = 0.5
 
@@ -563,7 +513,7 @@ iteration_count = 3
 for i in range(iteration_count):
     print('Iteration', i)
     #
-    # ----- Step 1: 固定tree count，找samples、feature -----
+    # ----- Step 1: 固定tree count，用BO找samples、feature -----
     #
     bound = [ 
         {'name': 'abnormal_ratio',
@@ -576,7 +526,7 @@ for i in range(iteration_count):
         
         {'name': 'tree_count',
           'type': 'discrete',
-          'domain': range(stable_tree_count[i], stable_tree_count[i]+1)},
+          'domain': range(stable_tree_count_list[i], stable_tree_count_list[i]+1)},
         
         {'name': 'samples',
          'type': 'discrete',
@@ -588,7 +538,7 @@ for i in range(iteration_count):
     ]
     
     print('Step 1')
-    print('stable_tree_count = ', stable_tree_count[i])
+    print('stable_tree_count = ', stable_tree_count_list[i])
     X_sample ,Y_sample = BO.init_samples(init_count, bound, bound_domain,
                               UnknownFunction.score_difference, train_data, test_data, test_bi_label)
     opt_score_diff, opt_param = BO.run_native(n_iter, 'LCB', X_sample ,Y_sample, 
@@ -604,25 +554,26 @@ for i in range(iteration_count):
 
 
     #
-    # ----- Step 2: 固定samples、features，找tree count -----
+    # ----- Step 2: 固定samples、features，bineary search找tree count -----
     #
     print('Step 2')
     
     score_diff_list, all_tree_count, stable_tree_count, stable_score_diff = TreeCountSearch.binary_search_dynamic_high(
         low = 2, high = 200, 
         stop_interval = 50, threshold=stable_threshold,
+        abnormal_ratio = bound[0]['domain'],
         samples = opt_param[3], 
         features = opt_param[4],
         stable_tree_count_func = UnknownFunction.stable_tree_count,
         train_data = train_data, test_data = test_data, test_bi_label = test_bi_label)
     
     print('minimum stable tree count =', stable_tree_count)
-    stable_tree_count.append(stable_tree_count)
+    stable_tree_count_list.append(stable_tree_count)
     print('stable_score_diff =', stable_score_diff)
     stable_score_diff_list.append(stable_score_diff)
         
 # 刪除初始設定的很大的 tree count，方便後面作圖
-del(stable_tree_count[0])
+del(stable_tree_count_list[0])
 #%%
 if iteration_count > 0:
     # 畫binary search的過程
@@ -631,13 +582,13 @@ if iteration_count > 0:
     plt.plot(all_tree_count, score_diff_list, 'o:')
     
     # 畫 stable threhold
-    plt.plot([0, 1100], [stable_threshold, stable_threshold], '-')
+    plt.plot([0, 100], [stable_threshold, stable_threshold], '-')
     
     for a, b in zip(all_tree_count, score_diff_list):
         plt.text(a, b, str(a), ha='left', va='top')
     
     plt.xlabel('tree count')
-    plt.ylabel('max/(max-min)  (%)')
+    plt.ylabel('score difference  (%)')
 #%% 
 # 畫BO找到的數值，隨著iteration的變化
 
@@ -649,7 +600,7 @@ fig_width = 20
 plt.figure(figsize=(fig_width,5))
 plt.grid(True)
 
-plt.plot(range(iteration_count), stable_tree_count, 'o:')
+plt.plot(range(iteration_count), stable_tree_count_list, 'o:')
 plt.xlabel('iteration', fontsize=30)
 plt.ylabel('tree count', fontsize=30)
 
@@ -680,41 +631,16 @@ plt.grid(True)
 plt.plot(range(iteration_count), features_list, 'o:')
 plt.xlabel('iteration', fontsize=30)
 plt.ylabel('features', fontsize=30)   
-#%% Grid search
-
-result = pd.DataFrame(columns=['n_estimators', 'max_samples', 'max_features', 
-                               'score_min', 'score_max', 'diff/score_max', 'time_cost'])
-grid_search = False
-if grid_search:
-    time_start = time.time() #開始計時
-    bound_n_estimators = range(100, 3000, 100)
-    for n_estimators in bound_n_estimators:
-        score_min, score_max, diff_presentage = stable_tree_count_func(
-            30, n_estimators, opt_max_samples, opt_max_features)
-        
-        time_end = time.time()    #結束計時
-        time_c= time_end - time_start   #執行所花時間
-        
-        result = result.append({
-            'n_estimators': n_estimators,
-            'max_samples': opt_max_samples, 
-            'max_features': opt_max_features,
-            'score_min': score_min,
-            'score_max': score_max,
-            'diff_presentage': diff_presentage,
-            'time_cost':time_c}, ignore_index=True)    
-    print(result.describe())
-
 
 #%%
 '''
-Bayesian Optimization Isolation Forest (libaray: GPyOpt)
+Bayesian Optimization Isolation Forest 
 '''
 print('Bayesian Optimization Forest...')
 # BO_IF = myIsolationForest.IF(abnormal_ratio, n_estimators=50, max_samples=100, max_features=5, X_train=train_data)
 BO_IF = myIsolationForest.IF(abnormal_ratio, n_estimators=200, max_samples=75, 
                              max_features=3, X_train=train_data, random_state=None)
-BO_IF.Predict(test_data, test_bi_label, y_test, labels)
+BO_IF.Predict(test_data, test_bi_label, test_label, labels)
 # BO_IF.PlotAnomalyScore('BO')
 
 print('\t binary classification')

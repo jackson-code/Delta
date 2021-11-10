@@ -42,11 +42,6 @@ def run_native(n_iter, acq_type, X_sample ,Y_sample, bound, bound_domain, train_
         # X_next: dim * 1
         X_next = acq_func.argmax(acq_type, X_sample, Y_sample, gpr, bound, bound_domain)
         
-        # 得到的argmax(acq)會是continous，必須把discrete type的數值取floor 
-        # for j in range(len(bound)):
-        #     if bound[j]['type'] == 'discrete':
-        #         X_next[j] = np.floor(X_next[j])
-        
         # Obtain next noisy sample from the objective function
         # Y_next: scalar
         Y_next = UnknownFunction.score_difference(X_next, train_data, test_data, test_label_bi)
