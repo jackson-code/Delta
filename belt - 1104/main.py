@@ -96,40 +96,6 @@ def ProduceFakeAbnormalData(abnormal_count, Xy_train):
                 fake_abnormal_data.loc[i, col] = random.uniform(extremly_value, extremly_value - fake_range)
     return fake_abnormal_data
     
-def my_custom_loss_func(y_true, anomaly_score, labels):   
-    df = pd.concat([y_true, anomaly_score], axis=1, ignore_index=True)
-    df.columns = ['Span', "Anomaly_score"]
-    
-    # 計算每種span的異常分數的平均
-    mean = []
-    for i in labels:
-        mean.append(df[df.Span == i].Anomaly_score.mean())
-    
-    # 計算平均之間的中點，當作multi-classify的threshold   
-    mean_middle = []
-    for i in range(len(labels)):
-        # 避免超出idx範圍
-        if i == len(labels)-1:
-            break
-        current = mean[i]
-        next = mean[i+1]
-        mean_middle.append((current + next) / 2)
-    
-
-    score = pd.Series.to_list(anomaly_score)
-    y_pred = []
-    # 多元分類
-    # 將每個異常分數與threshold合併並排序，異常分數的idx+1即為prediction
-    for i in range(len(score)):
-        temp = [score[i]]
-        temp.extend(mean_middle)
-        temp.sort()
-        y_pred.append(temp.index(score[i]) + 1)
-    y_pred = pd.Series(y_pred, index=y_true.index)
-    
-    f1score = f1_score(y_true, y_pred, average='weighted')
-
-    return f1score
 
 
     
@@ -392,7 +358,7 @@ np.seterr(divide='ignore', invalid='ignore')
 ## 實驗: BO找到的最佳參數分布，是否收斂
 
 # 實驗參數
-exp_count = 0
+exp_count = 50
 n_iter = 25
 init_count = 15
 bound = [ 
@@ -406,7 +372,7 @@ bound = [
     
     {'name': 'tree_count',
       'type': 'discrete',
-      'domain': range(200, 201)},
+      'domain': range(20, 21)},
     
     {'name': 'samples',
      'type': 'discrete',
@@ -451,9 +417,15 @@ print(opt_params.describe())
 # 存實驗結果
 # opt_params.to_pickle('pickle/1000_BO_500TreeCount')
 
-BOPlot.samples_distribution(opt_params)
+BOPlot.samples_distribution(opt_params['samples'])
 BOPlot.features_distribution(opt_params)
 
+#%%
+## 實驗:
+    
+
+    
+    
 #%% 
 ## 實驗: 觀察相同的samples之下，建出來的IF的score difference分布
 
