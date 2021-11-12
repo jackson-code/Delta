@@ -12,7 +12,7 @@ from sklearn.metrics import ConfusionMatrixDisplay
 from sklearn.metrics import classification_report
 import pandas as pd
 
-class IF():
+class MyIsolationForest():
     def __init__(self, abnormal_ratio, n_estimators, max_samples, max_features, X_train, random_state=None):
         self.IF = IsolationForest(
             contamination=abnormal_ratio, random_state=random_state, max_samples=max_samples, n_estimators=n_estimators, max_features=max_features)

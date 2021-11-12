@@ -26,9 +26,8 @@ import Preprocess.StatisticValue as PreStatVal
 #import FeatureSelection.FeatureSelection as FeatureSelection
 import dataToC.dataToC as dataToC
 import dataFromC.dataFromC as dataFromC
-import IsolationForest.IsolationForest as myIsolationForest
-import TreeCountSearch
-import AcquisitionFunction as acq_func
+import isolation_forest as myIsolationForest
+import acquisition_function as acq_func
 
 #%%
 def MergeCsv():  
@@ -290,7 +289,7 @@ dataToC.DataToC(train_data, test_data_label)
 Isolation Forest
 '''
 print('Isolation Forest...')
-IF = myIsolationForest.IF(abnormal_ratio, n_estimators=500, max_samples=20, max_features=5, X_train=train_data)
+IF = myIsolationForest.MyIsolationForest(abnormal_ratio, n_estimators=500, max_samples=20, max_features=5, X_train=train_data)
 
 # label: 正常=1，異常=-1
 test_bi_label = test_label.replace(to_replace = test_label[ test_label <= 1 ].tolist(), value=1 )
@@ -348,9 +347,8 @@ true_pred_prob_wrong = true_pred_prob[true_pred_prob['True'] != true_pred_prob['
 true_pred_prob_wrong.rename(columns={0: 'prob_1', 1: "prob_2", 2: "prob_3", 3: "prob_4", 4: "prob_5", 5: "prob_6",}, inplace = True)
 
 #%% 
-import UnknownFunction
-import BayesianOptimizatoin as BO
-import BayesianOptimizatoinPlot as BOPlot
+import bayesian_optimizatoin
+import bayesian_optimizatoin_plot as BOPlot
 
 # 把警告訊息關掉
 np.seterr(divide='ignore', invalid='ignore')
@@ -359,8 +357,6 @@ np.seterr(divide='ignore', invalid='ignore')
 
 # 實驗參數
 exp_count = 50
-n_iter = 25
-init_count = 15
 bound = [ 
     {'name': 'abnormal_ratio',
       'type': 'fixed',
@@ -372,23 +368,16 @@ bound = [
     
     {'name': 'tree_count',
       'type': 'discrete',
-      'domain': range(20, 21)},
+      'domain': range(200, 201)},
     
     {'name': 'samples',
      'type': 'discrete',
-     'domain': range(2, test_data.shape[0]-100)},
+     'domain': range(2, test_data.shape[0])},
 
     {'name': 'features',
      'type': 'discrete',
      'domain': range(3, 4)}
 ]
-
-bound_domain = np.zeros((len(bound), 2))
-for i in range(len(bound)):
-    if bound[i]['type'] == 'fixed':
-        bound_domain[i] = [ bound[i]['domain'], bound[i]['domain']]
-    else:
-        bound_domain[i] = [ bound[i]['domain'].start, bound[i]['domain'].stop ]
         
 # run BO
 opt_params = pd.DataFrame(columns=['score difference', 'tree_count', 'samples', 'features', 'time_cost'])
@@ -396,11 +385,10 @@ for i in range(exp_count):
     print('\n\t BO ex', i)
     time_start = time.time() #開始計時
     
-    X_sample ,Y_sample = BO.init_samples(init_count, bound, bound_domain,
-                                  UnknownFunction.score_difference, train_data, test_data, test_bi_label)
-    opt_score_diff, opt_param = BO.run_native(n_iter, 'LCB', X_sample ,Y_sample, 
-                                              bound, bound_domain, 
-                                              train_data, test_data, test_bi_label)     
+    BO = bayesian_optimizatoin.BayesianOptimization(bound, train_data, test_data, test_bi_label)
+    BO.init_samples(15, 'score_difference')
+    opt_score_diff, opt_param = BO.run_native(25, 'EI')    
+    
     time_end = time.time()    #結束計時
     time_cost= time_end - time_start   #執行所花時間
     print('\t', 'time cost', time_cost, 's')
@@ -421,9 +409,71 @@ BOPlot.samples_distribution(opt_params['samples'])
 BOPlot.features_distribution(opt_params)
 
 #%%
-## 實驗:
+## 實驗: 重複BO repeat次，對最佳參數取平均，看結果是否收斂
     
+# 實驗參數
+exp_count = 2
+repeat = 2
+bound = [ 
+    {'name': 'abnormal_ratio',
+      'type': 'fixed',
+      'domain': abnormal_ratio}, 
+        
+    {'name': 'IF_count',
+      'type': 'discrete',
+      'domain': range(1, 2)}, # 設定range(想要的IF_count, IF_count+1)
+    
+    {'name': 'tree_count',
+      'type': 'discrete',
+      'domain': range(200, 201)},
+    
+    {'name': 'samples',
+     'type': 'discrete',
+     'domain': range(2, test_data.shape[0])},
 
+    {'name': 'features',
+     'type': 'discrete',
+     'domain': range(3, 4)}
+]
+        
+# run BO
+opt_params = pd.DataFrame(columns=['score_difference', 'tree_count', 'samples', 'features', 'time_cost'])
+for i in range(exp_count):
+    print('\n\t BO ex', i)
+    time_start = time.time() #開始計時
+    temp_params = pd.DataFrame(columns=['score_difference', 'tree_count', 'samples', 'features'])
+    
+    # 每repeat次的最佳參數取平均
+    for j in range(repeat):
+        BO = bayesian_optimizatoin.BayesianOptimization(bound, train_data, test_data, test_bi_label)
+        BO.init_samples(15, 'score_difference')
+        temp_score_diff, temp_param = BO.run_native(25, 'LCB')  
+        
+        temp_params = temp_params.append({
+            'score_difference': temp_score_diff,
+            'tree_count': temp_param[2], 
+            'samples': temp_param[3], 
+            'features': temp_param[4]},ignore_index=True)
+    
+    time_end = time.time()    #結束計時
+    time_cost= time_end - time_start   #執行所花時間
+    print('\t', 'time cost', time_cost, 's')
+    
+    opt_param = temp_params.mean()    
+    # 所有實驗的參數結果
+    opt_params = opt_params.append({
+        'score_difference': opt_param['score_difference'],
+        'tree_count': opt_param['tree_count'], 
+        'samples': opt_param['samples'], 
+        'features': opt_param['features'],
+        'time_cost': time_cost}, ignore_index=True)
+print(opt_params.describe())
+
+# 存實驗結果
+opt_params.to_pickle('pickle/repeat_')
+
+BOPlot.samples_distribution(opt_params['samples'])
+BOPlot.features_distribution(opt_params)
     
     
 #%% 
@@ -441,7 +491,7 @@ for j in range(len(samples_try)):
     # 重複建IF
     for i in range(exp_count):
         print(i)
-        temp_if = myIsolationForest.IF(abnormal_ratio, n_estimators=200, max_samples=samples_try[j], max_features=3, X_train=train_data)
+        temp_if = myIsolationForest.MyIsolationForest(abnormal_ratio, n_estimators=200, max_samples=samples_try[j], max_features=3, X_train=train_data)
         temp_if.Predict(test_data, test_bi_label, test_label, labels)        
         # score difference取到小數點後3位
         score_differences[i] = round(temp_if.ScoreDifference(), 3)
@@ -468,6 +518,8 @@ for j in range(len(samples_try)):
     
 #%%
 ## 實驗: stable tree count 
+import unknown_function
+import tree_count_search
 
 # 實驗參數
 # 初始設一個極大的tree count(保證穩定)，然後用BO找到feature, samples
@@ -511,12 +563,11 @@ for i in range(iteration_count):
     
     print('Step 1')
     print('stable_tree_count = ', stable_tree_count_list[i])
-    X_sample ,Y_sample = BO.init_samples(init_count, bound, bound_domain,
-                              UnknownFunction.score_difference, train_data, test_data, test_bi_label)
-    opt_score_diff, opt_param = BO.run_native(n_iter, 'LCB', X_sample ,Y_sample, 
-                                          bound, bound_domain, 
-                                          train_data, test_data, test_bi_label)  
     
+    BO = bayesian_optimizatoin.BayesianOptimization(bound, train_data, test_data, test_bi_label)
+    BO.init_samples(15, 'score_difference')
+    opt_score_diff, opt_param = BO.run_native(25, 'LCB')   
+
     # 第一階段找到的最佳samples, features
     # 代入第二階段
     print('opt_samples =', opt_param[3])
@@ -530,13 +581,13 @@ for i in range(iteration_count):
     #
     print('Step 2')
     
-    score_diff_list, all_tree_count, stable_tree_count, stable_score_diff = TreeCountSearch.binary_search_dynamic_high(
+    score_diff_list, all_tree_count, stable_tree_count, stable_score_diff = tree_count_search.binary_search_dynamic_high(
         low = 2, high = 200, 
         stop_interval = 50, threshold=stable_threshold,
         abnormal_ratio = bound[0]['domain'],
         samples = opt_param[3], 
         features = opt_param[4],
-        stable_tree_count_func = UnknownFunction.stable_tree_count,
+        stable_tree_count_func = unknown_function.stable_tree_count,
         train_data = train_data, test_data = test_data, test_bi_label = test_bi_label)
     
     print('minimum stable tree count =', stable_tree_count)
@@ -609,8 +660,8 @@ plt.ylabel('features', fontsize=30)
 Bayesian Optimization Isolation Forest 
 '''
 print('Bayesian Optimization Forest...')
-# BO_IF = myIsolationForest.IF(abnormal_ratio, n_estimators=50, max_samples=100, max_features=5, X_train=train_data)
-BO_IF = myIsolationForest.IF(abnormal_ratio, n_estimators=200, max_samples=75, 
+# BO_IF = myIsolationForest.MyIsolationForest(abnormal_ratio, n_estimators=50, max_samples=100, max_features=5, X_train=train_data)
+BO_IF = myIsolationForest.MyIsolationForest(abnormal_ratio, n_estimators=200, max_samples=75, 
                              max_features=3, X_train=train_data, random_state=None)
 BO_IF.Predict(test_data, test_bi_label, test_label, labels)
 # BO_IF.PlotAnomalyScore('BO')
