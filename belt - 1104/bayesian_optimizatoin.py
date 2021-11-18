@@ -34,32 +34,41 @@ class BayesianOptimization():
     def init_samples(self, init_count, unknown_func):
         self.unknown_func = unknown_func
         
-        # 初始化X
-        X_samples = np.zeros((init_count, len(self.bound)))
+        # 初始化 X，還沒scale
+        X_original = np.zeros((init_count, len(self.bound)))
         for i in range(len(self.bound)):
             if self.bound[i]['type'] == 'continous' or self.bound[i]['type'] == 'fixed':
-                X_samples[:, i] = np.random.uniform(self.bound_domain[i][0], self.bound_domain[i][1], init_count)
+                X_original[:, i] = np.random.uniform(self.bound_domain[i][0], self.bound_domain[i][1], init_count)
             elif self.bound[i]['type'] == 'discrete':
-                X_samples[:, i] = np.random.randint(self.bound_domain[i][0], self.bound_domain[i][1], init_count)
+                X_original[:, i] = np.random.randint(self.bound_domain[i][0], self.bound_domain[i][1], init_count)
         
-        # 初始化Y
-        Y_samples = np.zeros((init_count, 1))
+        # 初始化Y，還沒scale
+        Y_original = np.zeros((init_count, 1))
         for i in range(init_count):
             if unknown_func == 'score_difference':
-                Y_samples[i] = unknown_function.score_difference(X_samples[i], self.train_data, self.test_data, self.test_bi_label)
+                Y_original[i] = unknown_function.score_difference(X_original[i], self.train_data, self.test_data, self.test_bi_label)
             
-        self.X_samples = X_samples
-        self.Y_samples = Y_samples
+        self.X_original = X_original
+        self.Y_original = Y_original
+        
+
     
     def run_native(self, n_iter, acq_type):
     
         for i in range(n_iter):
+            # 把重複的row去除，for sklearn gp(成功消除了gp的警告訊息)
+            self.X_original, unique_idx = np.unique(self.X_original, axis=0, return_index=True)
+            self.Y_original = self.Y_original[unique_idx]
+            
+            # scale for sklearn gp (不確定需不需要，paper code都有且x也有scale，x先暫時不scale)
+            self.Y_scaled = (self.Y_original - np.mean(self.Y_original)) / (np.max(self.Y_original) - np.min(self.Y_original))
+        
             # Update Gaussian process with existing samples
-            self.gpr.fit(self.X_samples, self.Y_samples)
+            self.gpr.fit(self.X_original, self.Y_scaled)
         
             # Obtain next sampling point from the acquisition function (expected_improvement)
             # X_next: dim * 1
-            X_next = acq_func.argmax(acq_type, self.X_samples, self.Y_samples, self.gpr, self.bound, self.bound_domain)
+            X_next = acq_func.argmax(acq_type, self.X_original, self.Y_scaled, self.gpr, self.bound, self.bound_domain)
             
             # Obtain next noisy sample from the objective function
             # Y_next: scalar
@@ -68,14 +77,14 @@ class BayesianOptimization():
             
             # Add sample to previous samples
             X_next = X_next.T
-            self.X_samples = np.vstack((self.X_samples, X_next))
-            self.Y_samples = np.vstack((self.Y_samples, Y_next))
+            self.X_original = np.vstack((self.X_original, X_next))
+            self.Y_original = np.vstack((self.Y_original, Y_next))
         
         # opt result
-        idx = np.argmin(self.Y_samples)
-        print(-self.Y_samples[idx])
-        print(self.X_samples[idx])
-        return self.Y_samples[idx], self.X_samples[idx]
+        idx = np.argmin(self.Y_original)
+        print(-self.Y_original[idx])
+        print(self.X_original[idx])
+        return self.Y_original[idx], self.X_original[idx]
     
     def run_abnormal_ratio(self, n_iter, acq_type, train_data_label):
         normal_span = [1]
@@ -83,11 +92,11 @@ class BayesianOptimization():
         
         for i in range(n_iter):
             # Update Gaussian process with existing samples
-            self.gpr.fit(self.X_samples, self.Y_samples)
+            self.gpr.fit(self.X_original, self.Y_original)
         
             # Obtain next sampling point from the acquisition function (expected_improvement)
             # X_next: dim * 1
-            X_next = acq_func.argmax(acq_type, self.X_samples, self.Y_samples, self.gpr, self.bound, self.bound_domain)
+            X_next = acq_func.argmax(acq_type, self.X_original, self.Y_original, self.gpr, self.bound, self.bound_domain)
             
             # X_next[0] is abnormal ratio
             # 依abnormal ratio調整train data
@@ -101,11 +110,11 @@ class BayesianOptimization():
             
             # Add sample to previous samples
             X_next = X_next.T
-            self.X_samples = np.vstack((self.X_samples, X_next))
-            self.Y_samples = np.vstack((self.Y_samples, Y_next))
+            self.X_original = np.vstack((self.X_original, X_next))
+            self.Y_original = np.vstack((self.Y_original, Y_next))
         
         # opt result
-        idx = np.argmin(self.Y_samples)
-        print(-self.Y_samples[idx])
-        print(self.X_samples[idx])
-        return self.Y_samples[idx], self.X_samples[idx]
+        idx = np.argmin(self.Y_original)
+        print(-self.Y_original[idx])
+        print(self.X_original[idx])
+        return self.Y_original[idx], self.X_original[idx]

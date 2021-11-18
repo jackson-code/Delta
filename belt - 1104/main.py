@@ -326,7 +326,7 @@ np.seterr(divide='ignore', invalid='ignore')
 ## 實驗: BO找到的最佳參數分布，是否收斂
 
 # 實驗參數
-exp_count = 0
+exp_count = 10
 bound = [ 
     {'name': 'abnormal_ratio',
       'type': 'fixed',
@@ -378,12 +378,15 @@ print(opt_params.describe())
 BOPlot.samples_distribution(opt_params['samples'])
 BOPlot.features_distribution(opt_params)
 
-
 #%%
-
+m = np.array([[1, 1, 2], [1, 1, 3], [1, 1, 2]])
+m = np.unique(m, axis=0)
+print(m)
+#%%
+## 用BO找abnoraml ratio (暫停)
 
 # 實驗參數
-exp_count = 1
+exp_count = 0
 bound = [ 
     {'name': 'abnormal_ratio',
       'type': 'continous',
@@ -429,258 +432,6 @@ for i in range(exp_count):
         'features': opt_param[4],
         'time_cost': time_cost}, ignore_index=True)
 print(opt_params.describe())
-
-
-#%%
-import unknown_function
-from statistics import mean
-
-# 實驗參數
-score_diff_threshold = 0.01
-high = 1
-mid = 0.1
-low = 0
-
-# for result
-abnormal_ratio_list = [0.5]
-score_diff_mean_list = []
-
-score_diff_gap = 1
-last_score_diff = 0
-while abnormal_ratio_list[-1] > 0:
-    print('abnormal_ratio_list[-1] = ', abnormal_ratio_list[-1])
-    train_data, train_label = process_data.remove_partial_abnormal_data(train_data_label, abnormal_ratio_list[-1], 
-                                                                        normal_span, abnormal_span)
-    # 計算score_diff
-    parameters = [abnormal_ratio_list[-1], 1, 200, 60, 3]
-    score_diff_list = []
-    for i in range(50):
-        score_diff = -1*unknown_function.score_difference(parameters, train_data, test_data, test_bi_label)
-        score_diff_list.append(score_diff)
-    score_diff_mean = mean(score_diff_list)
-    print('score diff = ', score_diff_mean)
-    score_diff_mean_list.append(score_diff_mean)
-    
-    abnormal_ratio_list.append(abnormal_ratio_list[-1] - 0.01)
-
-del abnormal_ratio_list[-1]
-#%%
-plt.figure(figsize=(10,10))
-plt.grid(True)
-plt.plot(abnormal_ratio_list, score_diff_mean_list, 'o:')
-plt.xlabel('abnormal ratio', fontsize=20)
-plt.ylabel('score difference', fontsize=20)
-plt.title('')
-#%%
-## bineary search
-
-import unknown_function
-from statistics import mean
-
-# 實驗參數
-score_diff_threshold = 0.01
-high = 1
-mid = 0.1
-low = 0
-
-# for result
-abnormal_ratio_list = []
-score_diff_mean_list = []
-
-score_diff_gap = 1
-last_score_diff = 0
-while score_diff_gap > score_diff_threshold:
-    print('mid = ', mid)
-    abnormal_ratio_list.append(mid)
-    train_data, train_label = process_data.remove_partial_abnormal_data(train_data_label, mid, 
-                                                                        normal_span, abnormal_span)
-    # 計算score_diff
-    parameters = [mid, 1, 200, 60, 3]
-    score_diff_list = []
-    for i in range(50):
-        score_diff = -1*unknown_function.score_difference(parameters, train_data, test_data, test_bi_label)
-        score_diff_list.append(score_diff)
-    score_diff_mean = mean(score_diff_list)
-    print('score diff = ', score_diff_mean)
-    score_diff_mean_list.append(score_diff_mean)
-    
-    if score_diff_mean >= last_score_diff:
-        high = mid
-    else:
-        low = mid
-    mid = (low + high) / 2      
-    
-    score_diff_gap = abs(last_score_diff - score_diff_mean)
-    print('gap = ', score_diff_gap)
-    last_score_diff = score_diff_mean
-
-plt.figure(figsize=(5,7))
-plt.grid(True)
-plt.plot(abnormal_ratio_list, score_diff_mean_list, 'o:')
-plt.xlabel('abnormal ratio', fontsize=20)
-plt.ylabel('score difference', fontsize=20)
-#%%
-# 實驗參數
-current_1 = 0.1
-step = 0.1
-
-# for result
-abnormal_ratio_list = []
-score_diff_mean_list = []
-
-slope_step = 0.01
-low_bound = 0 
-
-score_diff_gap = 1
-last_score_diff = 0
-
-for j in range(10):
-    if current_1 - slope_step <= 0:
-        break;
-    print('curren 1  = ', current_1)
-    abnormal_ratio_list.append(current_1)
-    train_data, train_label = process_data.remove_partial_abnormal_data(train_data_label, current_1, 
-                                                                        normal_span, abnormal_span)
-    # 計算score_diff 1
-    parameters = [current_1, 1, 200, 60, 3]
-    score_diff_list = []
-    for i in range(30):
-        score_diff = -1*unknown_function.score_difference(parameters, train_data, test_data, test_bi_label)
-        score_diff_list.append(score_diff)
-    score_diff_mean_1 = mean(score_diff_list)
-    print('score diff 1 = ', score_diff_mean_1)
-    score_diff_mean_list.append(score_diff_mean_1)
-    
-    current_2 = current_1 - slope_step
-    print('curren 2  = ', current_2)
-    abnormal_ratio_list.append(current_2)
-    train_data, train_label = process_data.remove_partial_abnormal_data(train_data_label, current_2, 
-                                                                        normal_span, abnormal_span)
-    # 計算score_diff 2
-    parameters = [current_2 , 1, 200, 60, 3]
-    score_diff_list = []
-    for i in range(30):
-        score_diff = -1*unknown_function.score_difference(parameters, train_data, test_data, test_bi_label)
-        score_diff_list.append(score_diff)
-    score_diff_mean_2 = mean(score_diff_list)
-    print('score diff 2 = ', score_diff_mean_2)
-    score_diff_mean_list.append(score_diff_mean_2)
-    
-    # slope
-    slope = (score_diff_mean_1 - score_diff_mean_2) / slope_step
-    print('slope = ', slope)
-    
-    score_diff_gap = abs(last_score_diff - score_diff_mean)
-    print('gap = ', score_diff_gap)
-    last_score_diff = score_diff_mean
-    
-    # 決定下一步
-    while current_1 + step * slope <= 0:
-        step = step / 2
-    current_1 = current_1 + step * slope
-    #%%
-plt.figure(figsize=(5,7))
-plt.grid(True)
-plt.plot(abnormal_ratio_list, score_diff_mean_list, 'o:')
-plt.xlabel('abnormal ratio', fontsize=20)
-plt.ylabel('score difference', fontsize=20)
-
-#%%
-# 實驗參數
-current = 0.1
-step = 1
-
-# for result
-abnormal_ratio_list = []
-score_diff_mean_list = []
-
-score_diff_gap = 1
-last_score_diff = 0
-
-for j in range(30):
-    print('current = ', current)
-    abnormal_ratio_list.append(current)
-    train_data, train_label = process_data.remove_partial_abnormal_data(train_data_label, current, 
-                                                                        normal_span, abnormal_span)
-    # 計算score_diff
-    parameters = [current, 1, 200, 60, 3]
-    score_diff_list = []
-    for i in range(30):
-        score_diff = -1*unknown_function.score_difference(parameters, train_data, test_data, test_bi_label)
-        score_diff_list.append(score_diff)
-    score_diff_mean = mean(score_diff_list)
-    print('score diff = ', score_diff_mean)
-    score_diff_mean_list.append(score_diff_mean)
-    
-    score_diff_gap = abs(last_score_diff - score_diff_mean)
-    print('gap = ', score_diff_gap)
-    last_score_diff = score_diff_mean
-    
-    # 決定下一步
-    if score_diff_mean >= max(score_diff_mean_list):
-        current = current - step * score_diff_gap
-        
-    else:
-        current = current + step * score_diff_gap
-#%%
-plt.figure(figsize=(5,7))
-plt.grid(True)
-plt.plot(abnormal_ratio_list, score_diff_mean_list, 'o:')
-#%%
-# 實驗參數
-score_diff_threshold = 0.01
-high = 1
-mid = 0.1
-low = 0
-step = 0.1
-
-# for result
-abnormal_ratio_list = []
-score_diff_mean_list = []
-
-score_diff_gap = 1
-last_score_diff = 0
-# # while score_diff_gap > score_diff_threshold:
-# for j in range(30):
-#     print('mid = ', mid)
-#     abnormal_ratio_list.append(mid)
-#     train_data, train_label = process_data.remove_partial_abnormal_data(train_data_label, mid, 
-#                                                                         normal_span, abnormal_span)
-#     # 計算score_diff
-#     parameters = [mid, 1, 200, 60, 3]
-#     score_diff_list = []
-#     for i in range(30):
-#         score_diff = -1*unknown_function.score_difference(parameters, train_data, test_data, test_bi_label)
-#         score_diff_list.append(score_diff)
-#     score_diff_mean = mean(score_diff_list)
-#     print('score diff = ', score_diff_mean)
-#     score_diff_mean_list.append(score_diff_mean)
-    
-#     score_diff_gap = abs(last_score_diff - score_diff_mean)
-#     print('gap = ', score_diff_gap)
-#     last_score_diff = score_diff_mean
-    
-#     # 決定下一步
-#     if score_diff_mean >= last_score_diff:
-#         mid = mid - step * score_diff_gap
-        
-#     else:
-#         mid = mid + step * score_diff_gap
-    
-
-
-# plt.figure(figsize=(5,7))
-# plt.grid(True)
-# plt.plot(abnormal_ratio_list, score_diff_mean_list, 'o:')
-
-
-
-#%%
-## 讀IF count pickle (此cell之後可刪除)
-# file = ['1', '10', '20', '40', '80', '160']
-# for i in range(len(file)):
-#     opt_params = pd.read_pickle('pickle/IF count/IFCount-' + file[i])
-#     BOPlot.samples_distribution(opt_params['max_samples'], file[i] + ' ISF')
 
 #%%
 ## 實驗: 重複BO repeat次，對最佳參數取平均，看結果是否收斂
