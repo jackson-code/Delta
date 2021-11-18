@@ -322,6 +322,11 @@ import bayesian_optimizatoin_plot as BOPlot
 
 # 把警告訊息關掉
 np.seterr(divide='ignore', invalid='ignore')
+# import warnings filter
+from warnings import simplefilter
+# ignore all future warnings
+simplefilter(action='ignore', category=FutureWarning)
+
 
 ## 實驗: BO找到的最佳參數分布，是否收斂
 
