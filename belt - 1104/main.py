@@ -20,7 +20,7 @@ from sklearn.metrics import f1_score, make_scorer
 import statistics
 
 import Helper.File.FileHelper as FileHelper
-import Property
+import PROPERTY
 import Plot
 import Preprocess.StatisticValue as PreStatVal
 #import FeatureSelection.FeatureSelection as FeatureSelection
@@ -32,20 +32,20 @@ import acquisition_function as acq_func
 #%%
 def MergeCsv():  
     #merge csv file (Span 1 ~ 6)
-    for idx in range(0, len(Property.Experiment().MERGED_FILE_NAME)):
-        FileHelper.MergeAllFile(Property.Experiment().PATH_RELATIVE[idx], '.csv', 
-                                Property.Experiment().MERGED_FILE_NAME[idx], None, 
+    for idx in range(0, len(PROPERTY.Experiment().MERGED_FILE_NAME)):
+        FileHelper.MergeAllFile(PROPERTY.Experiment().PATH_RELATIVE[idx], '.csv', 
+                                PROPERTY.Experiment().MERGED_FILE_NAME[idx], None, 
                                 [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 
-                                Property.Experiment().FIRST_FILE, 
-                                Property.Experiment().LAST_FILE)
+                                PROPERTY.Experiment().FIRST_FILE, 
+                                PROPERTY.Experiment().LAST_FILE)
 
 def GetRawDataFromCsv():     
     # [0~5] for Each Span 1 ~ 6
     raw_data = []
     # Read CSV File
-    for i in range(len(Property.Experiment().MERGED_FILE_NAME)):
-        path = os.path.abspath(os.getcwd()) + Property.Experiment().PATH_RELATIVE[i] + '\\' + Property.Experiment().MERGED_FILE_NAME[i]
-        merged_data = pd.read_csv(path, names=Property.Experiment().COL_NAME, index_col=False)
+    for i in range(len(PROPERTY.Experiment().MERGED_FILE_NAME)):
+        path = os.path.abspath(os.getcwd()) + PROPERTY.Experiment().PATH_RELATIVE[i] + '\\' + PROPERTY.Experiment().MERGED_FILE_NAME[i]
+        merged_data = pd.read_csv(path, names=PROPERTY.Experiment().COL_NAME, index_col=False)
         raw_data.append(merged_data)
     return raw_data
 
@@ -100,7 +100,7 @@ def ProduceFakeAbnormalData(abnormal_count, Xy_train):
     
 
 
-
+#%%
 print('Expriment begin...')
 
 '''
@@ -114,16 +114,16 @@ raw_data = GetRawDataFromCsv()
 print('Plot PLC cycle')
 spans = ['span 1', 'span 2']
 Plot.PlotMultiFeature(list_data = raw_data, feature = 'Current', 
-                      xlim = Property.Experiment().PLC_CYCLE * 5, x_axis_label = 'Data Points', 
+                      xlim = PROPERTY.Experiment().PLC_CYCLE * 5, x_axis_label = 'Data Points', 
                       list_labels = spans, 
                       title = '5 PLC CYCLE')
 Plot.PlotMultiFeature(list_data = raw_data, feature = 'Current', 
-                      xlim = Property.Experiment().PLC_CYCLE, x_axis_label = 'Data Points', 
+                      xlim = PROPERTY.Experiment().PLC_CYCLE, x_axis_label = 'Data Points', 
                       list_labels = spans, 
                       title = 'A PLC CYCLE')
 
 
-
+#%%
 '''
 Preprocessing
 '''
@@ -141,7 +141,7 @@ if first_calculated:
     for i in range(0, len(raw_data)):
         df = pd.DataFrame()
         for j in range(0, len(selected_col)):
-            df = pd.concat([df, PreStatVal.CalculateSixFeatureValue(raw_data[i], selected_col[j], Property.Experiment().FIRST_FILE, Property.Experiment().LAST_FILE)], axis=1)
+            df = pd.concat([df, PreStatVal.CalculateSixFeatureValue(raw_data[i], selected_col[j], PROPERTY.Experiment().FIRST_FILE, PROPERTY.Experiment().LAST_FILE)], axis=1)
         X_processed.append(df)
     # 刪掉null row    
     for i in range(0, len(X_processed)):
@@ -151,7 +151,7 @@ if first_calculated:
         X_processed[i].to_pickle('pickle/processed_X_' + str(i))    
 else:
     # read pickle
-    for i in range(0, Property.Experiment().SPAN_COUNT):
+    for i in range(0, PROPERTY.Experiment().SPAN_COUNT):
         X_processed.append(pd.read_pickle('pickle/processed_X_' + str(i)))  
     
 print('Plot preprocess data')
@@ -159,7 +159,7 @@ Plot.PlotMultiFeature(list_data = X_processed, feature = 'Current_Min', x_axis_l
 plt.figure(figsize=(7,5))
 
 
-
+#%%
 '''
 Feature selection
 '''
@@ -203,6 +203,12 @@ print('\t 3. GBDT')
 # gbdt.PrintImportances()
 # gbdt.PlotImportances()
 
+print('\t 4. Pearson correlation coefficient')
+import pearson
+# pearson_coeff = pearson.r_regression(fs_train_data, fs_train_label)
+
+from sklearn.feature_selection import f_regression
+f_statistic, p_value = f_regression(fs_train_data, fs_train_label)
 
 #seleted_features = ['Span', 'Power_Factor_Angle_Avg', 'Power_Factor_Angle_Max', 'Voltage_Avg', 'Voltage_Max', 'Current_Min']
 seleted_features = ['Span', 'Power_Factor_Angle_Avg', 'Power_Factor_Angle_Max', 'Power_Factor_Angle_Min', 'Torque_Min', 'Torque_Avg']
@@ -212,64 +218,28 @@ seleted_features = ['Span', 'Power_Factor_Angle_Avg', 'Power_Factor_Angle_Max', 
 selected_data_label = all_data_label.loc[:, seleted_features]
 
 
-
+#%%
 '''
 Train & Test data 
 '''
 print('Train & Test data...')
-train_data_label, test_data_label, train_label, test_label = train_test_split(selected_data_label, label, test_size=0.3, random_state=0,stratify=label)
+train_data_label, test_data_label, _, test_label = train_test_split(selected_data_label, label, test_size=0.3, random_state=0,stratify=label)
 # 排序是為了後面的異常分數圖
 test_data_label = test_data_label.sort_values(by=['Span'])
 test_data = test_data_label.drop(columns = 'Span')
 test_label = test_label.sort_values(ascending=True)
 
-
-
+#
+# 依異常比例，取部分異常資料
+#
 normal_span = [1]
 abnormal_span = [2]
 # = abnormal data 數量 / normal data 數量, range: 0~1
-abnormal_ratio = (1.0 / 30.0) / len(abnormal_span)
-abnormal_count = 0
-for i in abnormal_span:
-    abnormal_count += math.floor(abnormal_ratio * train_data_label[train_data_label.Span == i].shape[0])
+abnormal_ratio = (1.0 / 30.0)
 
-#
-# fake data
-#
-add_fake_abnormal_X = False
-if add_fake_abnormal_X:
-    print('\t produce Fake abnormal data')
-    fake_abnormal_data = ProduceFakeAbnormalData(abnormal_count, train_data_label)
-
-
-print('\t processing Train data')
-for i in range(1, Property.Experiment().SPAN_COUNT+1) :
-    if (i in abnormal_span) and (add_fake_abnormal_X == False):
-        print('\t add partial train real abnormal data')
-        Xy_temp = train_data_label.loc[train_data_label.Span == i, :]
-        # 依異常比例取部分的 train Xy
-        Xy_temp = Xy_temp.sample(frac = abnormal_ratio, axis = 0)
-        
-        # 移除所有的異常資料
-        idx = train_data_label.loc[train_data_label.Span == i,:].index
-        train_data_label = train_data_label.drop(idx, axis = 0)
-        # 加上部分的異常資料
-        train_data_label = train_data_label.append(Xy_temp)
-    # 正常資料不處理
-    elif i in normal_span:
-        continue
-    # 移除不用的正常資料(不在normal_span的正常資料會被移除)
-    else: 
-        idx = train_data_label.loc[train_data_label.Span == i,:].index
-        train_data_label = train_data_label.drop(idx, axis = 0)
-        
-if add_fake_abnormal_X == True:
-    print('\t add fake abnormal data')
-    train_data_label = train_data_label.append(fake_abnormal_data)
-
-train_data = train_data_label.drop(columns='Span')
-train_label = train_data_label.Span
-
+import process_data
+train_data, train_label = process_data.remove_partial_abnormal_data(train_data_label, abnormal_ratio, 
+                                                                    normal_span, abnormal_span)
 
 
 '''
@@ -356,7 +326,7 @@ np.seterr(divide='ignore', invalid='ignore')
 ## 實驗: BO找到的最佳參數分布，是否收斂
 
 # 實驗參數
-exp_count = 50
+exp_count = 0
 bound = [ 
     {'name': 'abnormal_ratio',
       'type': 'fixed',
@@ -408,12 +378,316 @@ print(opt_params.describe())
 BOPlot.samples_distribution(opt_params['samples'])
 BOPlot.features_distribution(opt_params)
 
+
+#%%
+
+
+# 實驗參數
+exp_count = 1
+bound = [ 
+    {'name': 'abnormal_ratio',
+      'type': 'continous',
+      'domain': range(0, 1)}, 
+        
+    {'name': 'IF_count',
+      'type': 'discrete',
+      'domain': range(30, 31)}, # 設定range(想要的IF_count, IF_count+1)
+    
+    {'name': 'tree_count',
+      'type': 'discrete',
+      'domain': range(200, 201)},
+    
+    {'name': 'samples',
+     'type': 'discrete',
+     'domain': range(60, 61)},
+
+    {'name': 'features',
+     'type': 'discrete',
+     'domain': range(3, 4)}
+]
+
+
+opt_params = pd.DataFrame(columns=['abnormal_ratio', 'score_difference', 'tree_count', 'samples', 'features', 'time_cost'])
+for i in range(exp_count):
+    print('\n\t BO ex', i)
+    time_start = time.time() #開始計時
+    
+    BO = bayesian_optimizatoin.BayesianOptimization(bound, train_data, test_data, test_bi_label)
+    BO.init_samples(15, 'score_difference')
+    opt_score_diff, opt_param = BO.run_abnormal_ratio(30, 'LCB', train_data_label)    
+    
+    time_end = time.time()    #結束計時
+    time_cost= time_end - time_start   #執行所花時間
+    print('\t', 'time cost', time_cost, 's')
+    
+    # 所有實驗的參數結果
+    opt_params = opt_params.append({
+        'abnormal_ratio': opt_param[0],
+        'score_difference': opt_score_diff,
+        'tree_count': opt_param[2], 
+        'samples': opt_param[3], 
+        'features': opt_param[4],
+        'time_cost': time_cost}, ignore_index=True)
+print(opt_params.describe())
+
+
+#%%
+import unknown_function
+from statistics import mean
+
+# 實驗參數
+score_diff_threshold = 0.01
+high = 1
+mid = 0.1
+low = 0
+
+# for result
+abnormal_ratio_list = [0.5]
+score_diff_mean_list = []
+
+score_diff_gap = 1
+last_score_diff = 0
+while abnormal_ratio_list[-1] > 0:
+    print('abnormal_ratio_list[-1] = ', abnormal_ratio_list[-1])
+    train_data, train_label = process_data.remove_partial_abnormal_data(train_data_label, abnormal_ratio_list[-1], 
+                                                                        normal_span, abnormal_span)
+    # 計算score_diff
+    parameters = [abnormal_ratio_list[-1], 1, 200, 60, 3]
+    score_diff_list = []
+    for i in range(50):
+        score_diff = -1*unknown_function.score_difference(parameters, train_data, test_data, test_bi_label)
+        score_diff_list.append(score_diff)
+    score_diff_mean = mean(score_diff_list)
+    print('score diff = ', score_diff_mean)
+    score_diff_mean_list.append(score_diff_mean)
+    
+    abnormal_ratio_list.append(abnormal_ratio_list[-1] - 0.01)
+
+del abnormal_ratio_list[-1]
+#%%
+plt.figure(figsize=(10,10))
+plt.grid(True)
+plt.plot(abnormal_ratio_list, score_diff_mean_list, 'o:')
+plt.xlabel('abnormal ratio', fontsize=20)
+plt.ylabel('score difference', fontsize=20)
+plt.title('')
+#%%
+## bineary search
+
+import unknown_function
+from statistics import mean
+
+# 實驗參數
+score_diff_threshold = 0.01
+high = 1
+mid = 0.1
+low = 0
+
+# for result
+abnormal_ratio_list = []
+score_diff_mean_list = []
+
+score_diff_gap = 1
+last_score_diff = 0
+while score_diff_gap > score_diff_threshold:
+    print('mid = ', mid)
+    abnormal_ratio_list.append(mid)
+    train_data, train_label = process_data.remove_partial_abnormal_data(train_data_label, mid, 
+                                                                        normal_span, abnormal_span)
+    # 計算score_diff
+    parameters = [mid, 1, 200, 60, 3]
+    score_diff_list = []
+    for i in range(50):
+        score_diff = -1*unknown_function.score_difference(parameters, train_data, test_data, test_bi_label)
+        score_diff_list.append(score_diff)
+    score_diff_mean = mean(score_diff_list)
+    print('score diff = ', score_diff_mean)
+    score_diff_mean_list.append(score_diff_mean)
+    
+    if score_diff_mean >= last_score_diff:
+        high = mid
+    else:
+        low = mid
+    mid = (low + high) / 2      
+    
+    score_diff_gap = abs(last_score_diff - score_diff_mean)
+    print('gap = ', score_diff_gap)
+    last_score_diff = score_diff_mean
+
+plt.figure(figsize=(5,7))
+plt.grid(True)
+plt.plot(abnormal_ratio_list, score_diff_mean_list, 'o:')
+plt.xlabel('abnormal ratio', fontsize=20)
+plt.ylabel('score difference', fontsize=20)
+#%%
+# 實驗參數
+current_1 = 0.1
+step = 0.1
+
+# for result
+abnormal_ratio_list = []
+score_diff_mean_list = []
+
+slope_step = 0.01
+low_bound = 0 
+
+score_diff_gap = 1
+last_score_diff = 0
+
+for j in range(10):
+    if current_1 - slope_step <= 0:
+        break;
+    print('curren 1  = ', current_1)
+    abnormal_ratio_list.append(current_1)
+    train_data, train_label = process_data.remove_partial_abnormal_data(train_data_label, current_1, 
+                                                                        normal_span, abnormal_span)
+    # 計算score_diff 1
+    parameters = [current_1, 1, 200, 60, 3]
+    score_diff_list = []
+    for i in range(30):
+        score_diff = -1*unknown_function.score_difference(parameters, train_data, test_data, test_bi_label)
+        score_diff_list.append(score_diff)
+    score_diff_mean_1 = mean(score_diff_list)
+    print('score diff 1 = ', score_diff_mean_1)
+    score_diff_mean_list.append(score_diff_mean_1)
+    
+    current_2 = current_1 - slope_step
+    print('curren 2  = ', current_2)
+    abnormal_ratio_list.append(current_2)
+    train_data, train_label = process_data.remove_partial_abnormal_data(train_data_label, current_2, 
+                                                                        normal_span, abnormal_span)
+    # 計算score_diff 2
+    parameters = [current_2 , 1, 200, 60, 3]
+    score_diff_list = []
+    for i in range(30):
+        score_diff = -1*unknown_function.score_difference(parameters, train_data, test_data, test_bi_label)
+        score_diff_list.append(score_diff)
+    score_diff_mean_2 = mean(score_diff_list)
+    print('score diff 2 = ', score_diff_mean_2)
+    score_diff_mean_list.append(score_diff_mean_2)
+    
+    # slope
+    slope = (score_diff_mean_1 - score_diff_mean_2) / slope_step
+    print('slope = ', slope)
+    
+    score_diff_gap = abs(last_score_diff - score_diff_mean)
+    print('gap = ', score_diff_gap)
+    last_score_diff = score_diff_mean
+    
+    # 決定下一步
+    while current_1 + step * slope <= 0:
+        step = step / 2
+    current_1 = current_1 + step * slope
+    #%%
+plt.figure(figsize=(5,7))
+plt.grid(True)
+plt.plot(abnormal_ratio_list, score_diff_mean_list, 'o:')
+plt.xlabel('abnormal ratio', fontsize=20)
+plt.ylabel('score difference', fontsize=20)
+
+#%%
+# 實驗參數
+current = 0.1
+step = 1
+
+# for result
+abnormal_ratio_list = []
+score_diff_mean_list = []
+
+score_diff_gap = 1
+last_score_diff = 0
+
+for j in range(30):
+    print('current = ', current)
+    abnormal_ratio_list.append(current)
+    train_data, train_label = process_data.remove_partial_abnormal_data(train_data_label, current, 
+                                                                        normal_span, abnormal_span)
+    # 計算score_diff
+    parameters = [current, 1, 200, 60, 3]
+    score_diff_list = []
+    for i in range(30):
+        score_diff = -1*unknown_function.score_difference(parameters, train_data, test_data, test_bi_label)
+        score_diff_list.append(score_diff)
+    score_diff_mean = mean(score_diff_list)
+    print('score diff = ', score_diff_mean)
+    score_diff_mean_list.append(score_diff_mean)
+    
+    score_diff_gap = abs(last_score_diff - score_diff_mean)
+    print('gap = ', score_diff_gap)
+    last_score_diff = score_diff_mean
+    
+    # 決定下一步
+    if score_diff_mean >= max(score_diff_mean_list):
+        current = current - step * score_diff_gap
+        
+    else:
+        current = current + step * score_diff_gap
+#%%
+plt.figure(figsize=(5,7))
+plt.grid(True)
+plt.plot(abnormal_ratio_list, score_diff_mean_list, 'o:')
+#%%
+# 實驗參數
+score_diff_threshold = 0.01
+high = 1
+mid = 0.1
+low = 0
+step = 0.1
+
+# for result
+abnormal_ratio_list = []
+score_diff_mean_list = []
+
+score_diff_gap = 1
+last_score_diff = 0
+# # while score_diff_gap > score_diff_threshold:
+# for j in range(30):
+#     print('mid = ', mid)
+#     abnormal_ratio_list.append(mid)
+#     train_data, train_label = process_data.remove_partial_abnormal_data(train_data_label, mid, 
+#                                                                         normal_span, abnormal_span)
+#     # 計算score_diff
+#     parameters = [mid, 1, 200, 60, 3]
+#     score_diff_list = []
+#     for i in range(30):
+#         score_diff = -1*unknown_function.score_difference(parameters, train_data, test_data, test_bi_label)
+#         score_diff_list.append(score_diff)
+#     score_diff_mean = mean(score_diff_list)
+#     print('score diff = ', score_diff_mean)
+#     score_diff_mean_list.append(score_diff_mean)
+    
+#     score_diff_gap = abs(last_score_diff - score_diff_mean)
+#     print('gap = ', score_diff_gap)
+#     last_score_diff = score_diff_mean
+    
+#     # 決定下一步
+#     if score_diff_mean >= last_score_diff:
+#         mid = mid - step * score_diff_gap
+        
+#     else:
+#         mid = mid + step * score_diff_gap
+    
+
+
+# plt.figure(figsize=(5,7))
+# plt.grid(True)
+# plt.plot(abnormal_ratio_list, score_diff_mean_list, 'o:')
+
+
+
+#%%
+## 讀IF count pickle (此cell之後可刪除)
+# file = ['1', '10', '20', '40', '80', '160']
+# for i in range(len(file)):
+#     opt_params = pd.read_pickle('pickle/IF count/IFCount-' + file[i])
+#     BOPlot.samples_distribution(opt_params['max_samples'], file[i] + ' ISF')
+
 #%%
 ## 實驗: 重複BO repeat次，對最佳參數取平均，看結果是否收斂
     
 # 實驗參數
-exp_count = 2
-repeat = 2
+exp_count = 0
+repeat = 3
 bound = [ 
     {'name': 'abnormal_ratio',
       'type': 'fixed',
@@ -470,7 +744,7 @@ for i in range(exp_count):
 print(opt_params.describe())
 
 # 存實驗結果
-opt_params.to_pickle('pickle/repeat_')
+# opt_params.to_pickle('pickle/repeat_')
 
 BOPlot.samples_distribution(opt_params['samples'])
 BOPlot.features_distribution(opt_params)
@@ -518,7 +792,7 @@ for j in range(len(samples_try)):
     
 #%%
 ## 實驗: stable tree count 
-import unknown_function
+
 import tree_count_search
 
 # 實驗參數
@@ -533,7 +807,7 @@ stable_score_diff_list = []
 all_tree_count = []
 
 # 迭代
-iteration_count = 3
+iteration_count = 0
 for i in range(iteration_count):
     print('Iteration', i)
     #
@@ -661,7 +935,7 @@ Bayesian Optimization Isolation Forest
 '''
 print('Bayesian Optimization Forest...')
 # BO_IF = myIsolationForest.MyIsolationForest(abnormal_ratio, n_estimators=50, max_samples=100, max_features=5, X_train=train_data)
-BO_IF = myIsolationForest.MyIsolationForest(abnormal_ratio, n_estimators=200, max_samples=75, 
+BO_IF = myIsolationForest.MyIsolationForest(abnormal_ratio, n_estimators=200, max_samples=205, 
                              max_features=3, X_train=train_data, random_state=None)
 BO_IF.Predict(test_data, test_bi_label, test_label, labels)
 # BO_IF.PlotAnomalyScore('BO')

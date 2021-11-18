@@ -10,6 +10,7 @@ import numpy as np
 
 import acquisition_function as acq_func
 import unknown_function 
+import process_data
 
 class BayesianOptimization():
     def __init__(self, bound, train_data, test_data, test_bi_label):
@@ -64,6 +65,39 @@ class BayesianOptimization():
             # Y_next: scalar
             if self.unknown_func == 'score_difference':
                 Y_next = unknown_function.score_difference(X_next, self.train_data, self.test_data, self.test_bi_label)
+            
+            # Add sample to previous samples
+            X_next = X_next.T
+            self.X_samples = np.vstack((self.X_samples, X_next))
+            self.Y_samples = np.vstack((self.Y_samples, Y_next))
+        
+        # opt result
+        idx = np.argmin(self.Y_samples)
+        print(-self.Y_samples[idx])
+        print(self.X_samples[idx])
+        return self.Y_samples[idx], self.X_samples[idx]
+    
+    def run_abnormal_ratio(self, n_iter, acq_type, train_data_label):
+        normal_span = [1]
+        abnormal_span = [2]
+        
+        for i in range(n_iter):
+            # Update Gaussian process with existing samples
+            self.gpr.fit(self.X_samples, self.Y_samples)
+        
+            # Obtain next sampling point from the acquisition function (expected_improvement)
+            # X_next: dim * 1
+            X_next = acq_func.argmax(acq_type, self.X_samples, self.Y_samples, self.gpr, self.bound, self.bound_domain)
+            
+            # X_next[0] is abnormal ratio
+            # 依abnormal ratio調整train data
+            train_data, train_label = process_data.remove_partial_abnormal_data(train_data_label, float(X_next[0]), 
+                                                                        normal_span, abnormal_span)
+            
+            # Obtain next noisy sample from the objective function
+            # Y_next: scalar
+            if self.unknown_func == 'score_difference':
+                Y_next = unknown_function.score_difference(X_next, train_data, self.test_data, self.test_bi_label)
             
             # Add sample to previous samples
             X_next = X_next.T
