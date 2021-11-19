@@ -153,10 +153,13 @@ else:
     # read pickle
     for i in range(0, PROPERTY.Experiment().SPAN_COUNT):
         X_processed.append(pd.read_pickle('pickle/processed_X_' + str(i)))  
-    
-print('Plot preprocess data')
-Plot.PlotMultiFeature(list_data = X_processed, feature = 'Current_Min', x_axis_label = 'Data Points', list_labels = spans, title = 'Feature of Different Span in ALL PLC Cycle')
-plt.figure(figsize=(7,5))
+
+plot_processed_data = True
+if plot_processed_data:
+    print('Plot processed data')
+    for i in range(X_processed[0].shape[1]):
+        Plot.PlotMultiFeature(list_data = X_processed, feature = X_processed[0].columns[i], x_axis_label = 'Data Points', list_labels = spans, title = 'Feature of Different Span in ALL PLC Cycle')
+        plt.figure(figsize=(7,5))
 
 
 #%%
@@ -203,15 +206,49 @@ print('\t 3. GBDT')
 # gbdt.PrintImportances()
 # gbdt.PlotImportances()
 
-print('\t 4. Pearson correlation coefficient')
-import pearson
-# pearson_coeff = pearson.r_regression(fs_train_data, fs_train_label)
+import process_data
+normal_span = [1]
+abnormal_span = [2]
+train_data, train_label = process_data.remove_partial_abnormal_data(all_data_label, 0.03, 
+                                                                    normal_span, abnormal_span)
+
+from sklearn.ensemble import IsolationForest
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import ConfusionMatrixDisplay
+IF = IsolationForest(contamination=0.03, random_state=0, max_samples=60, n_estimators=1000, max_features=36)
+IF.fit(train_data)
+score = IF.score_samples(fs_test_data) * -1
+# Confusion Matrix
+fs_test_pred_label = IF.predict(fs_test_data)
+cm = confusion_matrix(fs_test_label, fs_test_pred_label)
+# disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[1, 2])
+# disp = disp.plot(include_values=True, cmap='Blues')
+# plt.title('')
+
+
+y_term = score - score.mean()
+pearson_list = []
+for i in range(fs_test_data.shape[1]):    
+    x_term = fs_test_data.iloc[:, i] - fs_test_data.iloc[:, i].mean()
+    # 分子
+    numerator = (x_term * y_term).sum()
+    # 分母
+    denominator = ((x_term ** 2).sum() * (y_term ** 2).sum()) ** (1/2)
+    pearson_list.append((numerator / denominator)**2)
+    print('pearson ', i, ' = ', pearson_list[i])
+
+print('---End---')
+
+pearson = pd.Series(pearson_list, index=fs_test_data.columns)
+pearson.sort_values(inplace=True)
 
 from sklearn.feature_selection import f_regression
 f_statistic, p_value = f_regression(fs_train_data, fs_train_label)
 
 #seleted_features = ['Span', 'Power_Factor_Angle_Avg', 'Power_Factor_Angle_Max', 'Voltage_Avg', 'Voltage_Max', 'Current_Min']
 seleted_features = ['Span', 'Power_Factor_Angle_Avg', 'Power_Factor_Angle_Max', 'Power_Factor_Angle_Min', 'Torque_Min', 'Torque_Avg']
+# 測試pearson是否有用
+seleted_features = ['Span', 'RPM_Max', 'Torque_Std', 'Current_Std', 'Power_Factor_Angle_Skewness', 'RPM_Skewness']
 #seleted_features = ['Power_Factor_Angle_Avg','Current_Min',]
 
 # data after feature selection
@@ -236,7 +273,6 @@ normal_span = [1]
 abnormal_span = [2]
 # = abnormal data 數量 / normal data 數量, range: 0~1
 abnormal_ratio = (1.0 / 30.0)
-
 import process_data
 train_data, train_label = process_data.remove_partial_abnormal_data(train_data_label, abnormal_ratio, 
                                                                     normal_span, abnormal_span)
@@ -271,6 +307,8 @@ IF.PlotAnomalyScore('')
 print('\t binary classification')
 IF.ConfusionMatrixBinary([-1, 1], 'IF')
 IF.ClassificationReportBinary()
+
+
 
 #%%
 print('GMM...')
@@ -376,6 +414,7 @@ for i in range(exp_count):
         'features': opt_param[4],
         'time_cost': time_cost}, ignore_index=True)
 print(opt_params.describe())
+
 
 # 存實驗結果
 # opt_params.to_pickle('pickle/1000_BO_500TreeCount')
@@ -691,10 +730,10 @@ Bayesian Optimization Isolation Forest
 '''
 print('Bayesian Optimization Forest...')
 # BO_IF = myIsolationForest.MyIsolationForest(abnormal_ratio, n_estimators=50, max_samples=100, max_features=5, X_train=train_data)
-BO_IF = myIsolationForest.MyIsolationForest(abnormal_ratio, n_estimators=200, max_samples=205, 
+BO_IF = myIsolationForest.MyIsolationForest(abnormal_ratio, n_estimators=200, max_samples=60, 
                              max_features=3, X_train=train_data, random_state=None)
 BO_IF.Predict(test_data, test_bi_label, test_label, labels)
-# BO_IF.PlotAnomalyScore('BO')
+BO_IF.PlotAnomalyScore('BO')
 
 print('\t binary classification')
 # label: 正常=1，異常=-1
