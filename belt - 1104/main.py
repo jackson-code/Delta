@@ -206,50 +206,40 @@ print('\t 3. GBDT')
 # gbdt.PrintImportances()
 # gbdt.PlotImportances()
 
+print('\t 4. Pearson')
 import process_data
 normal_span = [1]
 abnormal_span = [2]
-train_data, train_label = process_data.remove_partial_abnormal_data(all_data_label, 0.03, 
+abnormal_ratio = 0.1
+train_data, train_label = process_data.remove_partial_abnormal_data(all_data_label, abnormal_ratio, 
                                                                     normal_span, abnormal_span)
 
 from sklearn.ensemble import IsolationForest
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import ConfusionMatrixDisplay
-IF = IsolationForest(contamination=0.03, random_state=0, max_samples=60, n_estimators=1000, max_features=36)
+IF = IsolationForest(contamination=abnormal_ratio, random_state=0, max_samples=100, n_estimators=1000, max_features=36)
 IF.fit(train_data)
+# 將異常分數作為計算pearson的y
 score = IF.score_samples(fs_test_data) * -1
+# 檢查model是否不錯，如果model極差的話，pearson失效
 # Confusion Matrix
 fs_test_pred_label = IF.predict(fs_test_data)
 cm = confusion_matrix(fs_test_label, fs_test_pred_label)
-# disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[1, 2])
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[1, 2])
 # disp = disp.plot(include_values=True, cmap='Blues')
-# plt.title('')
 
+import feature_selection
+pearson = feature_selection.pearson(fs_test_data, score)
+# 把pearson係數>=0.5的feature取出
+seleted_features = pearson[pearson >= 0.5].index.values.tolist()
+seleted_features.append('Span')
 
-y_term = score - score.mean()
-pearson_list = []
-for i in range(fs_test_data.shape[1]):    
-    x_term = fs_test_data.iloc[:, i] - fs_test_data.iloc[:, i].mean()
-    # 分子
-    numerator = (x_term * y_term).sum()
-    # 分母
-    denominator = ((x_term ** 2).sum() * (y_term ** 2).sum()) ** (1/2)
-    pearson_list.append((numerator / denominator)**2)
-    print('pearson ', i, ' = ', pearson_list[i])
-
-print('---End---')
-
-pearson = pd.Series(pearson_list, index=fs_test_data.columns)
-pearson.sort_values(inplace=True)
-
+# 套件計算pearson的p value, t value，目前不知道意義為何，先保留
 from sklearn.feature_selection import f_regression
 f_statistic, p_value = f_regression(fs_train_data, fs_train_label)
 
-#seleted_features = ['Span', 'Power_Factor_Angle_Avg', 'Power_Factor_Angle_Max', 'Voltage_Avg', 'Voltage_Max', 'Current_Min']
-seleted_features = ['Span', 'Power_Factor_Angle_Avg', 'Power_Factor_Angle_Max', 'Power_Factor_Angle_Min', 'Torque_Min', 'Torque_Avg']
-# 測試pearson是否有用
-seleted_features = ['Span', 'RPM_Max', 'Torque_Std', 'Current_Std', 'Power_Factor_Angle_Skewness', 'RPM_Skewness']
-#seleted_features = ['Power_Factor_Angle_Avg','Current_Min',]
+# terry選的
+#seleted_features = ['Span', 'Power_Factor_Angle_Avg', 'Power_Factor_Angle_Max', 'Power_Factor_Angle_Min', 'Torque_Min', 'Torque_Avg']
 
 # data after feature selection
 selected_data_label = all_data_label.loc[:, seleted_features]
@@ -295,7 +285,7 @@ dataToC.DataToC(train_data, test_data_label)
 Isolation Forest
 '''
 print('Isolation Forest...')
-IF = myIsolationForest.MyIsolationForest(abnormal_ratio, n_estimators=500, max_samples=20, max_features=5, X_train=train_data)
+IF = myIsolationForest.MyIsolationForest(abnormal_ratio, n_estimators=500, max_samples=60, max_features=12, X_train=train_data)
 
 # label: 正常=1，異常=-1
 test_bi_label = test_label.replace(to_replace = test_label[ test_label <= 1 ].tolist(), value=1 )
@@ -305,7 +295,7 @@ IF.Predict(test_data, test_bi_label, test_label, labels)
 IF.PlotAnomalyScore('')
 
 print('\t binary classification')
-IF.ConfusionMatrixBinary([-1, 1], 'IF')
+IF.ConfusionMatrixBinary([1, 2], 'IF')
 IF.ClassificationReportBinary()
 
 
