@@ -154,17 +154,17 @@ else:
     for i in range(0, PROPERTY.Experiment().SPAN_COUNT):
         X_processed.append(pd.read_pickle('pickle/processed_X_' + str(i)))  
 
-plot_processed_data = True
+plot_processed_data = False
 if plot_processed_data:
     print('Plot processed data')
     for i in range(X_processed[0].shape[1]):
-        Plot.PlotMultiFeature(list_data = X_processed, feature = X_processed[0].columns[i], x_axis_label = 'Data Points', list_labels = spans, title = 'Feature of Different Span in ALL PLC Cycle')
-        plt.figure(figsize=(7,5))
+        Plot.PlotMultiFeature(list_data = X_processed, feature = X_processed[0].columns[i], x_axis_label = 'Data Points', list_labels = spans, title = '')
+        # plt.figure(figsize=(7,5))
 
 
 #%%
 '''
-Feature selection
+Feature selection (舊的，已棄置，之後可刪除)
 '''
 print('Feature selection...')
 
@@ -206,48 +206,60 @@ print('\t 3. GBDT')
 # gbdt.PrintImportances()
 # gbdt.PlotImportances()
 
-print('\t 4. Pearson')
-import process_data
+# terry選的
+#seleted_features = ['Span', 'Power_Factor_Angle_Avg', 'Power_Factor_Angle_Max', 'Power_Factor_Angle_Min', 'Torque_Min', 'Torque_Avg']
+
+#%%
+'''
+Feature selection
+'''
+print('Train & Test data for FS...')
+train_data_label, test_data_label, _, test_label = train_test_split(all_data_label, label, test_size=0.3, random_state=0,stratify=label)
+# 排序是為了畫IF的異常分數圖
+test_data_label = test_data_label.sort_values(by=['Span'])
+test_data = test_data_label.drop(columns = 'Span')
+test_label = test_label.sort_values(ascending=True)
+# 依異常比例，取部分異常資料
 normal_span = [1]
 abnormal_span = [2]
-abnormal_ratio = 0.1
-train_data, train_label = process_data.remove_partial_abnormal_data(all_data_label, abnormal_ratio, 
+# = abnormal data 數量 / normal data 數量, range: 0~1
+abnormal_ratio = 1.0 / 1.5
+import process_data
+train_data, train_label = process_data.remove_partial_abnormal_data(train_data_label, abnormal_ratio, 
                                                                     normal_span, abnormal_span)
 
-from sklearn.ensemble import IsolationForest
-from sklearn.metrics import confusion_matrix
-from sklearn.metrics import ConfusionMatrixDisplay
-IF = IsolationForest(contamination=abnormal_ratio, random_state=0, max_samples=100, n_estimators=1000, max_features=36)
-IF.fit(train_data)
-# 將異常分數作為計算pearson的y
-score = IF.score_samples(fs_test_data) * -1
-# 檢查model是否不錯，如果model極差的話，pearson失效
-# Confusion Matrix
-fs_test_pred_label = IF.predict(fs_test_data)
-cm = confusion_matrix(fs_test_label, fs_test_pred_label)
-disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[1, 2])
-# disp = disp.plot(include_values=True, cmap='Blues')
+
+'''
+Pearson
+'''
+print('Isolation Forest for Pearson...')
+IF = myIsolationForest.MyIsolationForest(abnormal_ratio, n_estimators=1000, max_samples=100, max_features=36, X_train=train_data)
+
+# label: 正常=1，異常=-1
+test_bi_label = test_label.replace(to_replace = test_label[ test_label <= 1 ].tolist(), value=1 )
+test_bi_label = test_bi_label.replace(to_replace = test_label[ test_label > 1 ].tolist(), value=-1 )
+
+IF.Predict(test_data, test_bi_label, test_label, labels)
+IF.PlotAnomalyScore('')
+
+IF.ConfusionMatrixBinary([1, 2], 'IF')
+IF.ClassificationReportBinary()
 
 import feature_selection
-pearson = feature_selection.pearson(fs_test_data, score)
+pearson = feature_selection.pearson(test_data, IF.all_score)
 # 把pearson係數>=0.5的feature取出
 seleted_features = pearson[pearson >= 0.5].index.values.tolist()
 seleted_features.append('Span')
 
 # 套件計算pearson的p value, t value，目前不知道意義為何，先保留
 from sklearn.feature_selection import f_regression
-f_statistic, p_value = f_regression(fs_train_data, fs_train_label)
-
-# terry選的
-#seleted_features = ['Span', 'Power_Factor_Angle_Avg', 'Power_Factor_Angle_Max', 'Power_Factor_Angle_Min', 'Torque_Min', 'Torque_Avg']
+f_statistic, p_value = f_regression(train_data, train_label)
 
 # data after feature selection
 selected_data_label = all_data_label.loc[:, seleted_features]
-
-
 #%%
 '''
-Train & Test data 
+Train & Test data after feature selection
 '''
 print('Train & Test data...')
 train_data_label, test_data_label, _, test_label = train_test_split(selected_data_label, label, test_size=0.3, random_state=0,stratify=label)
@@ -256,9 +268,7 @@ test_data_label = test_data_label.sort_values(by=['Span'])
 test_data = test_data_label.drop(columns = 'Span')
 test_label = test_label.sort_values(ascending=True)
 
-#
 # 依異常比例，取部分異常資料
-#
 normal_span = [1]
 abnormal_span = [2]
 # = abnormal data 數量 / normal data 數量, range: 0~1
@@ -267,6 +277,9 @@ import process_data
 train_data, train_label = process_data.remove_partial_abnormal_data(train_data_label, abnormal_ratio, 
                                                                     normal_span, abnormal_span)
 
+# label: 正常=1，異常=-1
+test_bi_label = test_label.replace(to_replace = test_label[ test_label <= 1 ].tolist(), value=1 )
+test_bi_label = test_bi_label.replace(to_replace = test_label[ test_label > 1 ].tolist(), value=-1 )
 
 '''
 C++
@@ -278,27 +291,6 @@ dataToC.DataToC(train_data, test_data_label)
 # anomaly_score_from_C = dataFromC.DataFromC()
 # for i in range(anomaly_score_from_C.shape[1]):
 #     Plot.PlotFeature(anomaly_score_from_C, anomaly_score_from_C.columns[i])
-
-
-
-'''
-Isolation Forest
-'''
-print('Isolation Forest...')
-IF = myIsolationForest.MyIsolationForest(abnormal_ratio, n_estimators=500, max_samples=60, max_features=12, X_train=train_data)
-
-# label: 正常=1，異常=-1
-test_bi_label = test_label.replace(to_replace = test_label[ test_label <= 1 ].tolist(), value=1 )
-test_bi_label = test_bi_label.replace(to_replace = test_label[ test_label > 1 ].tolist(), value=-1 )
-
-IF.Predict(test_data, test_bi_label, test_label, labels)
-IF.PlotAnomalyScore('')
-
-print('\t binary classification')
-IF.ConfusionMatrixBinary([1, 2], 'IF')
-IF.ClassificationReportBinary()
-
-
 
 #%%
 print('GMM...')
@@ -359,7 +351,7 @@ simplefilter(action='ignore', category=FutureWarning)
 ## 實驗: BO找到的最佳參數分布，是否收斂
 
 # 實驗參數
-exp_count = 10
+exp_count = 2
 bound = [ 
     {'name': 'abnormal_ratio',
       'type': 'fixed',
@@ -412,10 +404,6 @@ print(opt_params.describe())
 BOPlot.samples_distribution(opt_params['samples'])
 BOPlot.features_distribution(opt_params)
 
-#%%
-m = np.array([[1, 1, 2], [1, 1, 3], [1, 1, 2]])
-m = np.unique(m, axis=0)
-print(m)
 #%%
 ## 用BO找abnoraml ratio (暫停)
 
