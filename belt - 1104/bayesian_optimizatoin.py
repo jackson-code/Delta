@@ -11,6 +11,7 @@ import numpy as np
 import acquisition_function as acq_func
 import unknown_function 
 import process_data
+import gp_hedge
 
 class BayesianOptimization():
     def __init__(self, bound, train_data, test_data, test_bi_label):
@@ -79,6 +80,59 @@ class BayesianOptimization():
             X_next = X_next.T
             self.X_original = np.vstack((self.X_original, X_next))
             self.Y_original = np.vstack((self.Y_original, Y_next))
+        
+        # opt result
+        idx = np.argmin(self.Y_original)
+        print(-self.Y_original[idx])
+        print(self.X_original[idx])
+        return self.Y_original[idx], self.X_original[idx]
+    
+    def run_hedge(self, n_iter, acq_types, eta):
+        gains = [0] * len(acq_types)
+        
+        # 把重複的row去除，for sklearn gp(成功消除了gp的警告訊息)
+        self.X_original, unique_idx = np.unique(self.X_original, axis=0, return_index=True)
+        self.Y_original = self.Y_original[unique_idx]
+        
+        # scale for sklearn gp (不確定需不需要，paper code都有且x也有scale，x先暫時不scale)
+        self.Y_scaled = (self.Y_original - np.mean(self.Y_original)) / (np.max(self.Y_original) - np.min(self.Y_original))
+    
+        # Update Gaussian process with existing samples
+        self.gpr.fit(self.X_original, self.Y_scaled)
+        
+        for i in range(n_iter):
+            # Obtain next sampling point from the acquisition function (expected_improvement)
+            # X_next: dim * 1
+            max_points = []
+            for acq_type in acq_types:
+                max_points.append(acq_func.argmax(acq_type, self.X_original, self.Y_scaled, self.gpr, self.bound, self.bound_domain))
+                
+            p = gp_hedge.compute_probabilities(gains, eta)
+            X_next, acq_idx = gp_hedge.choose_x(max_points, p)
+            
+            # Obtain next noisy sample from the objective function
+            # Y_next: scalar
+            if self.unknown_func == 'score_difference':
+                Y_next = unknown_function.score_difference(X_next, self.train_data, self.test_data, self.test_bi_label)
+            
+            # Add sample to previous samples
+            X_next = X_next.T
+            self.X_original = np.vstack((self.X_original, X_next))
+            self.Y_original = np.vstack((self.Y_original, Y_next))
+            
+            # 把重複的row去除，for sklearn gp(成功消除了gp的警告訊息)
+            self.X_original, unique_idx = np.unique(self.X_original, axis=0, return_index=True)
+            self.Y_original = self.Y_original[unique_idx]
+            
+            # scale for sklearn gp (不確定需不需要，paper code都有且x也有scale，x先暫時不scale)
+            self.Y_scaled = (self.Y_original - np.mean(self.Y_original)) / (np.max(self.Y_original) - np.min(self.Y_original))
+        
+            # Update Gaussian process with existing samples
+            self.gpr.fit(self.X_original, self.Y_scaled)
+                        
+            means = [self.gpr.predict(max_point.T, return_std=False, return_cov=False) for max_point in max_points]
+            gains = [gains[idx] + means[idx] for idx in range(0, len(acq_types))]
+            print("Chosen acquisition functiom: " + acq_types[acq_idx])
         
         # opt result
         idx = np.argmin(self.Y_original)

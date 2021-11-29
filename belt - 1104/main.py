@@ -223,7 +223,7 @@ test_label = test_label.sort_values(ascending=True)
 normal_span = [1]
 abnormal_span = [2]
 # = abnormal data 數量 / normal data 數量, range: 0~1
-abnormal_ratio = 1.0 / 1.5
+abnormal_ratio = 1.0 / 10
 import process_data
 train_data, train_label = process_data.remove_partial_abnormal_data(train_data_label, abnormal_ratio, 
                                                                     normal_span, abnormal_span)
@@ -351,7 +351,7 @@ simplefilter(action='ignore', category=FutureWarning)
 ## 實驗: BO找到的最佳參數分布，是否收斂
 
 # 實驗參數
-exp_count = 2
+exp_count = 0
 bound = [ 
     {'name': 'abnormal_ratio',
       'type': 'fixed',
@@ -383,6 +383,63 @@ for i in range(exp_count):
     BO = bayesian_optimizatoin.BayesianOptimization(bound, train_data, test_data, test_bi_label)
     BO.init_samples(15, 'score_difference')
     opt_score_diff, opt_param = BO.run_native(25, 'EI')    
+    
+    time_end = time.time()    #結束計時
+    time_cost= time_end - time_start   #執行所花時間
+    print('\t', 'time cost', time_cost, 's')
+    
+    # 所有實驗的參數結果
+    opt_params = opt_params.append({
+        'score difference': opt_score_diff,
+        'tree_count': opt_param[2], 
+        'samples': opt_param[3], 
+        'features': opt_param[4],
+        'time_cost': time_cost}, ignore_index=True)
+print(opt_params.describe())
+
+
+# 存實驗結果
+# opt_params.to_pickle('pickle/1000_BO_500TreeCount')
+
+BOPlot.samples_distribution(opt_params['samples'])
+BOPlot.features_distribution(opt_params)
+
+#%%
+## 實驗: GP hedge
+
+# 實驗參數
+exp_count = 2
+bound = [ 
+    {'name': 'abnormal_ratio',
+      'type': 'fixed',
+      'domain': abnormal_ratio}, 
+        
+    {'name': 'IF_count',
+      'type': 'discrete',
+      'domain': range(1, 2)}, # 設定range(想要的IF_count, IF_count+1)
+    
+    {'name': 'tree_count',
+      'type': 'discrete',
+      'domain': range(200, 201)},
+    
+    {'name': 'samples',
+     'type': 'discrete',
+     'domain': range(2, test_data.shape[0])},
+
+    {'name': 'features',
+     'type': 'discrete',
+     'domain': range(3, 4)}
+]
+        
+# run BO
+opt_params = pd.DataFrame(columns=['score difference', 'tree_count', 'samples', 'features', 'time_cost'])
+for i in range(exp_count):
+    print('\n\t BO ex', i)
+    time_start = time.time() #開始計時
+    
+    BO = bayesian_optimizatoin.BayesianOptimization(bound, train_data, test_data, test_bi_label)
+    BO.init_samples(15, 'score_difference')
+    opt_score_diff, opt_param = BO.run_hedge(25, ["PI", "EI", "UCB", "LCB"], eta=1)  
     
     time_end = time.time()    #結束計時
     time_cost= time_end - time_start   #執行所花時間
