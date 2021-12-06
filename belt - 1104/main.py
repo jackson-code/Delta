@@ -229,10 +229,8 @@ train_data, train_label = process_data.remove_partial_abnormal_data(train_data_l
                                                                     normal_span, abnormal_span)
 
 
-'''
-Pearson
-'''
-print('Isolation Forest for Pearson...')
+
+print('Isolation Forest for Pearson and Spearman...')
 IF = myIsolationForest.MyIsolationForest(abnormal_ratio, n_estimators=1000, max_samples=100, max_features=36, X_train=train_data)
 
 # label: 正常=1，異常=-1
@@ -245,6 +243,9 @@ IF.PlotAnomalyScore('')
 IF.ConfusionMatrixBinary([1, 2], 'IF')
 IF.ClassificationReportBinary()
 
+'''
+Pearson (for linear)
+'''
 import feature_selection
 pearson = feature_selection.pearson(test_data, IF.all_score)
 # 把pearson係數>=0.5的feature取出
@@ -257,6 +258,13 @@ f_statistic, p_value = f_regression(train_data, train_label)
 
 # data after feature selection
 selected_data_label = all_data_label.loc[:, seleted_features]
+
+
+'''
+Spearman (for non-linear)
+'''
+spearman = feature_selection.spearman(test_data, IF.all_score)
+
 #%%
 '''
 Train & Test data after feature selection
@@ -428,7 +436,7 @@ bound = [
 
     {'name': 'features',
      'type': 'discrete',
-     'domain': range(3, 4)}
+     'domain': range(1, 13)}
 ]
         
 # run BO
