@@ -132,7 +132,7 @@ class BayesianOptimization():
                         
             means = [self.gpr.predict(max_point.T, return_std=False, return_cov=False) for max_point in max_points]
             gains = [gains[idx] + means[idx] for idx in range(0, len(acq_types))]
-            print("Chosen acquisition functiom: " + acq_types[acq_idx])
+            print("Iteration", i, ",", "Chosen acquisition functiom:",acq_types[acq_idx])
         
         # opt result
         idx = np.argmin(self.Y_original)
